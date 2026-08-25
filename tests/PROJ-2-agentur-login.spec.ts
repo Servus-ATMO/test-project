@@ -46,6 +46,19 @@ test.describe('PROJ-2: Agentur-Login', () => {
   // sich gegenseitig in Supabase Auths Rate-Limiting/DB-Verbindungslimits.
   test.describe.configure({ mode: 'serial' })
 
+  test('robots.txt and sitemap.xml bypass the login gate (crawler/browser files)', async ({
+    request,
+  }) => {
+    // Regression: der Proxy-Matcher schloss zunaechst nur favicon.ico aus,
+    // robots.txt wurde faelschlich zu /login umgeleitet (Lighthouse-SEO-Check
+    // nach dem PROJ-2-Deploy hat das aufgedeckt).
+    const robots = await request.get('/robots.txt', { maxRedirects: 0 })
+    expect([200, 404]).toContain(robots.status())
+
+    const sitemap = await request.get('/sitemap.xml', { maxRedirects: 0 })
+    expect([200, 404]).toContain(sitemap.status())
+  })
+
   test('unauthenticated visit to a protected route redirects to /login with a redirect param', async ({
     page,
   }) => {

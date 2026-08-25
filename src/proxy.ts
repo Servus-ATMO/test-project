@@ -11,9 +11,11 @@ export const config = {
      * Auf alle Pfade anwenden ausser:
      * - _next/static (statische Dateien)
      * - _next/image (Bild-Optimierung)
-     * - favicon.ico
+     * - favicon.ico, robots.txt, sitemap.xml (Crawler/Browser-Dateien, sollen
+     *   nie durchs Login-Gate umgeleitet werden - siehe Lighthouse-SEO-Check
+     *   nach dem PROJ-2-Deploy, robots.txt landete faelschlich auf /login)
      * - gaengige Bild-Dateiendungen
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
