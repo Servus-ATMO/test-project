@@ -160,6 +160,63 @@ test.describe('PROJ-2: Agentur-Login', () => {
     await expect(page).toHaveURL('/passwort-vergessen?error=expired_link')
   })
 
+  test('full password-reset flow: real recovery link sets a new password that then works', async ({
+    page,
+    baseURL,
+  }) => {
+    // Eigener, isolierter Testnutzer (nicht TEST_EMAIL) - dieser Test aendert
+    // das Passwort und darf die anderen, seriell laufenden Tests nicht stoeren.
+    // Ohne Custom-SMTP nutzt Supabase den Standard-Reset-Link (liefert die
+    // Session als URL-Fragment) - genau das Szenario, das ResetPasswordGate
+    // abdeckt (siehe src/components/auth/reset-password-gate.tsx).
+    const email = `e2e-proj2-reset-${Date.now()}@example.com`
+    const oldPassword = 'OldPasswort123!'
+    const newPassword = 'NewPasswort456!'
+    const supabase = adminClient()
+
+    const { data: userData, error: createError } = await supabase.auth.admin.createUser({
+      email,
+      password: oldPassword,
+      email_confirm: true,
+    })
+    expect(createError).toBeNull()
+
+    try {
+      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${baseURL}/passwort-zuruecksetzen` },
+      })
+      expect(linkError).toBeNull()
+
+      // Simuliert den Klick auf den Link aus der E-Mail.
+      await page.goto(linkData!.properties.action_link, { waitUntil: 'networkidle' })
+      await expect(page).toHaveURL(/\/passwort-zuruecksetzen/)
+
+      await page.fill('input[name="password"]', newPassword)
+      await page.fill('input[name="passwordConfirm"]', newPassword)
+      await page.click('button[type="submit"]')
+      await expect(page).toHaveURL('/login?reset=success')
+
+      // Neues Passwort funktioniert...
+      await page.fill('input[name="email"]', email)
+      await page.fill('input[name="password"]', newPassword)
+      await page.click('button[type="submit"]')
+      await expect(page).toHaveURL('/dashboard')
+
+      await page.click('button:has-text("Logout")')
+      await expect(page).toHaveURL('/login')
+
+      // ...das alte nicht mehr.
+      await page.fill('input[name="email"]', email)
+      await page.fill('input[name="password"]', oldPassword)
+      await page.click('button[type="submit"]')
+      await expect(page.getByText('E-Mail oder Passwort falsch.')).toBeVisible()
+    } finally {
+      await supabase.auth.admin.deleteUser(userData!.user.id)
+    }
+  })
+
   test('login form renders and is usable at mobile width (375px)', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })
     await page.goto('/login')

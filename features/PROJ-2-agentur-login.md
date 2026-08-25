@@ -12,7 +12,12 @@
 - Live im Browser getestet (Playwright-Skript, da `chromium-cli` nicht verfügbar war): `/` und `/dashboard` leiten bei fehlendem Login korrekt zu `/login?redirect=...` weiter, `/passwort-vergessen` rendert öffentlich, leeres Login-Formular zeigt Client-seitige Validierungsfehler ohne Server-Request, falsche Zugangsdaten zeigen die generische Fehlermeldung "E-Mail oder Passwort falsch." — keine Konsolenfehler.
 - Beim Testen aufgefallen und behoben: Passwort-Feld wurde bei einem Server-/Netzwerkfehler nicht geleert (AC dazu explizit gefordert) — `form.resetField('password')` im Catch-Block von `LoginForm` ergänzt.
 - `zod` v4: `z.email()` statt des veralteten `.string().email()` verwendet (in `node_modules/zod` verifiziert).
-- **Nicht von mir umsetzbar:** Das Supabase-Dashboard-E-Mail-Template "Reset Password" muss manuell auf `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/passwort-zuruecksetzen` umgestellt werden (Supabase Dashboard → Authentication → Email Templates) — kein MCP-Tool dafür verfügbar. Ohne diese Änderung landet der Link im Standard-Format, das nicht zur eigenen `/auth/confirm`-Route passt.
+- **Nachtrag: Passwort-Reset ohne Custom-SMTP.** Der geplante Weg (E-Mail-Template auf `/auth/confirm?token_hash=...` umstellen) scheiterte an einer Supabase-Plattform-Einschränkung: Der Template-Source-Editor ist gesperrt, solange kein eigener SMTP-Server hinterlegt ist ("Set up custom SMTP to edit templates") — nicht dokumentiert gewesen, erst beim Testen im Dashboard sichtbar geworden. Custom-SMTP wäre eine weitere externe Abhängigkeit (neuer Account bei einem Mail-Provider) gewesen, daher stattdessen die Architektur an den **unveränderten Standard-Link** angepasst:
+  - Der Standard-`{{ .ConfirmationURL }}` führt über Supabases eigene Domain (`*.supabase.co/auth/v1/verify`) und hängt die Session nach Verifikation als **URL-Fragment** (`#access_token=...&refresh_token=...`) an `redirectTo` an — Fragmente erreichen den Server nie, weshalb die ursprünglich gebaute serverseitige `/auth/confirm`-Route (erwartet `token_hash` als Query-Param) hier leer ausgeht.
+  - `requestPasswordReset` zeigt `redirectTo` jetzt direkt auf `/passwort-zuruecksetzen` (statt `/auth/confirm`).
+  - Neue Client-Komponente `src/components/auth/reset-password-gate.tsx`: liest das Fragment beim Laden aus, übernimmt die Session per `supabase.auth.setSession()` (der `@supabase/ssr`-Browser-Client schreibt das als Cookie, dadurch serverseitig für die anschließende `resetPassword`-Server-Action sichtbar), entfernt die Tokens danach aus der URL. `/passwort-zuruecksetzen/page.tsx` hat deshalb keinen serverseitigen Session-Check mehr (Fragment ist serverseitig unsichtbar) — das Gate übernimmt die Prüfung clientseitig.
+  - `/auth/confirm`-Route bleibt unverändert im Code (kein Schaden) — falls später doch Custom-SMTP eingerichtet und das Template angepasst wird, greift sie automatisch wieder, da ein angepasstes Template die eigene, fest verdrahtete URL nutzt und `redirectTo` dann ignoriert.
+  - End-to-end verifiziert mit einem über die Supabase-Admin-API (`auth.admin.generateLink`) erzeugten echten Recovery-Link — kompletter Flow inkl. Login mit neuem Passwort funktioniert.
 
 ## Dependencies
 - Requires: PROJ-1 (Supabase Infrastructure Setup) — Auth, `profiles`-Tabelle, Proxy-Session-Refresh
@@ -58,7 +63,8 @@
 
 ## Open Questions
 - [ ] Passwort-Mindestanforderungen über reine Länge (8 Zeichen) hinaus? — kann bei `/architecture` verfeinert werden
-- [ ] Supabase-Dashboard-E-Mail-Template "Reset Password" muss manuell umgestellt werden (siehe Implementierungsnotizen) — ohne diesen manuellen Schritt funktioniert der Passwort-Reset-Link aus der echten E-Mail nicht, obwohl `/auth/confirm` und die Reset-Seite selbst fertig implementiert sind
+- [x] ~~Supabase-Dashboard-E-Mail-Template umstellen~~ — nicht möglich ohne Custom-SMTP (Source-Editor gesperrt); stattdessen Architektur an den Standard-Link angepasst (Fragment-basierte Session-Übernahme clientseitig), siehe Implementierungsnotizen. Funktioniert jetzt mit dem unveränderten Supabase-Standard-Template, kein SMTP-Setup nötig.
+- [ ] **Wichtig für Produktion:** Supabase Auth → URL Configuration: `https://test-project-woad-theta.vercel.app/**` muss zu den erlaubten Redirect URLs hinzugefügt werden (aktuell nur `localhost:3000` erlaubt). Ohne diesen Eintrag fällt `resetPasswordForEmail` bei einer echten Produktions-Anfrage vermutlich auf die Site URL zurück, und der Reset-Link in der E-Mail zeigt auf `localhost` statt auf die echte Domain — lokal (`localhost:3000`) bereits end-to-end getestet, Produktions-E-Mail-Versand noch nicht
 
 ## Decision Log
 
@@ -82,6 +88,7 @@
 | Keine neuen Pakete — `react-hook-form`/`zod`/shadcn-Formkomponenten bereits vorhanden | Vermeidet unnötige Abhängigkeiten, Projekt bringt alles Nötige für Formulare schon mit | 2026-08-25 |
 | Eigene `/auth/confirm`-Route statt Supabase-Standard-Bestätigungslink | Für Cookie-basierte SSR-Sessions (`@supabase/ssr`) muss `verifyOtp` im eigenen Server-Kontext laufen, nicht auf Supabases gehostetem Verify-Endpunkt (offizielles Next.js-Beispiel aus den Supabase-Docs übernommen) | 2026-08-25 |
 | `z.email()` statt `.string().email()` | Letzteres ist in der installierten Zod-Version (4.3.5) deprecated (verifiziert in `node_modules/zod`) | 2026-08-25 |
+| Passwort-Reset per Fragment-Session (`ResetPasswordGate`, clientseitig) statt der ursprünglich geplanten `/auth/confirm`-Route mit angepasstem E-Mail-Template | Template-Source-Editor im Supabase-Dashboard ist ohne Custom-SMTP gesperrt; Custom-SMTP wäre eine weitere externe Abhängigkeit gewesen. `/auth/confirm` bleibt im Code als Fallback für den Fall, dass später doch Custom-SMTP eingerichtet wird | 2026-08-25 |
 | `form.resetField('password')` bei Server-/Netzwerkfehler | Beim Browser-Test aufgefallen: Passwort blieb entgegen der Spec-AC im Feld stehen | 2026-08-25 |
 
 ---
@@ -161,7 +168,7 @@ Es wurde **kein Anwendungscode geändert** — nur Testdaten-Erzeugung und Testt
 - [x] Live bestätigt für beide Fälle (existierender Test-Account vs. frei erfundene E-Mail). E2E-Test vorhanden. Tatsächlicher E-Mail-Versand/-Inhalt nicht prüfbar (kein Postfach-Zugriff in dieser Umgebung) — siehe auch offene Dashboard-Template-Frage in den Implementierungsnotizen.
 
 #### AC-7: Reset-Link → neues Passwort setzen (≥ 8 Zeichen) → Redirect zu Login
-- [ ] **Nicht end-to-end testbar in dieser Umgebung** (kein E-Mail-Postfach-Zugriff, und das Supabase-Dashboard-Template ist noch nicht auf `/auth/confirm` umgestellt — siehe Open Questions). Teilweise abgesichert: `/auth/confirm` mit ungültigem Token leitet korrekt zu `/passwort-vergessen?error=expired_link` weiter (live bestätigt, E2E-Test vorhanden); `/passwort-zuruecksetzen` ohne aktive Recovery-Session leitet ebenfalls korrekt weg (live bestätigt, E2E-Test vorhanden). Die eigentliche `updateUser`-Logik ist nur per Code-Review geprüft.
+- [x] **Vollständig end-to-end verifiziert** (echter, über die Supabase-Admin-API generierter Recovery-Link, kompletter Flow inkl. Login mit neuem Passwort + Ablehnung des alten). Architektur dafür angepasst — siehe Implementierungsnotizen "Nachtrag: Passwort-Reset ohne Custom-SMTP". E2E-Test: `full password-reset flow: real recovery link sets a new password that then works` in `tests/PROJ-2-agentur-login.spec.ts`.
 
 #### AC-8: Supabase-API nicht erreichbar → Fehlermeldung, E-Mail bleibt, Passwort wird geleert
 - [ ] **Nicht live simuliert** (würde einen absichtlichen Verbindungsabbruch zu Supabase erfordern). Der `form.resetField('password')`-Fix wurde während der Frontend-Implementierung eingebaut und per Code-Review verifiziert, aber nicht in dieser QA-Runde unter echtem Netzwerkfehler nachgestellt.
@@ -195,11 +202,11 @@ Es wurde **kein Anwendungscode geändert** — nur Testdaten-Erzeugung und Testt
 Keine offenen Bugs. Ein zunächst als Critical eingestufter Befund ("Login schlägt lautlos fehl") stellte sich bei der Root-Cause-Analyse als fehlerhaft angelegter QA-Testnutzer heraus (siehe Methodik-Hinweis oben), nicht als Fehler im Produktcode. Mit korrekten Testdaten bestehen alle Login-/Logout-/Redirect-Acceptance-Criteria.
 
 ### Summary
-- **Acceptance Criteria:** 6/8 zweifelsfrei bestanden (AC-1 bis AC-6), 2 nicht end-to-end testbar in dieser Umgebung (AC-7: kein E-Mail-Postfach-Zugriff + Dashboard-Template noch nicht umgestellt; AC-8: würde einen absichtlichen Verbindungsabbruch zu Supabase erfordern) — beide jedoch per Code-Review plausibel und teilweise (Negativpfade) live bestätigt
+- **Acceptance Criteria:** 7/8 zweifelsfrei bestanden (AC-1 bis AC-7, AC-7 nachträglich per echtem Recovery-Link end-to-end verifiziert), 1 nicht simuliert (AC-8: würde einen absichtlichen Verbindungsabbruch zu Supabase erfordern) — per Code-Review plausibel
 - **Bugs Found:** 0 (1 initialer Fehlalarm durch fehlerhafte QA-Testdaten, aufgeklärt und korrigiert — siehe oben)
 - **Security:** Pass
-- **Production Ready:** YES — für den Scope von PROJ-2. AC-7 (echter E-Mail-Reset-Flow) sollte manuell nachgeprüft werden, sobald das Supabase-Dashboard-Template umgestellt ist (siehe Open Questions)
-- **Recommendation:** Deploy-fähig. Vor dem ersten echten Kunden-/Mitarbeiter-Einsatz: Supabase-Dashboard-E-Mail-Template für Passwort-Reset umstellen (siehe Open Questions) und den Reset-Flow einmal manuell mit einer echten Mailbox durchspielen
+- **Production Ready:** YES
+- **Recommendation:** Deploy-fähig. Vor dem ersten echten Kunden-/Mitarbeiter-Einsatz: Produktions-Domain zu den erlaubten Supabase-Redirect-URLs hinzufügen (siehe Open Questions), damit Reset-E-Mails aus echtem Betrieb korrekt auf die Live-Domain zeigen
 
 ## Deployment
 
@@ -214,8 +221,9 @@ Live verifiziert nach Deploy: `/` und `/dashboard` leiten unautorisiert korrekt 
 - Lighthouse-Check gegen `/login` in Produktion: Performance 99, Accessibility 98, Best Practices 96, SEO 91→**100** nach Fix
 - **Bug gefunden + behoben:** `robots.txt`/`sitemap.xml` wurden vom Proxy fälschlich zu `/login` umgeleitet (Matcher schloss nur `favicon.ico` aus) — SEO-Audit deckte das auf. Fix + Regressionstest in `tests/PROJ-2-agentur-login.spec.ts`, erneut deployt und verifiziert (404 statt Redirect)
 - Rate-Limiting bewusst nicht ergänzt (Upstash Redis wäre neue externe Abhängigkeit) — widerspräche der bereits getroffenen Entscheidung "Supabase-Auth-Standard reicht" (siehe Decision Log)
+- Error-Tracking: Vercel-eigenes Observability/Logging ist ohne Zusatzaufwand aktiv (kein Sentry nötig) — [vercel.com/atmodesign/test-project/observability](https://vercel.com/atmodesign/test-project/observability)
+- Passwort-Reset-Flow architektonisch umgebaut (Custom-SMTP war nötig für den ursprünglichen Plan, aber nicht verfügbar) und **end-to-end mit einem echten, über die Supabase-Admin-API erzeugten Recovery-Link verifiziert** — siehe Implementierungsnotizen. AC-7 damit vollständig bestanden.
 
 **Weiterhin offen:**
-- Supabase-Dashboard-E-Mail-Template für Passwort-Reset noch nicht auf `/auth/confirm` umgestellt (siehe Open Questions) — Reset-Link aus echter E-Mail funktioniert dadurch noch nicht; ebenso Site-URL in Supabase Auth-Settings noch nicht auf die Produktions-Domain umgestellt
-- Error-Tracking (Sentry) — braucht externe Kontoerstellung, siehe `docs/production/error-tracking.md`
+- Supabase Auth → URL Configuration: Produktions-Domain noch nicht zu den erlaubten Redirect URLs hinzugefügt (siehe Open Questions) — Reset-E-Mails aus echtem Produktionsbetrieb würden aktuell vermutlich noch auf `localhost` zeigen; lokal bereits vollständig funktionsfähig getestet
 - Fehlendes `favicon.ico` (kosmetisch, kostet 4 Punkte bei Best Practices)

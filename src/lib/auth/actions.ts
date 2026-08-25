@@ -60,8 +60,20 @@ export async function requestPasswordReset(values: unknown): Promise<ActionResul
   // Rueckgabewert von resetPasswordForEmail bewusst ignoriert: Die Bestaetigung
   // muss unabhaengig davon, ob der Account existiert, identisch bleiben
   // (Enumeration-Schutz, siehe PROJ-2 Spec).
+  //
+  // Ziel direkt /passwort-zuruecksetzen, NICHT /auth/confirm: Ohne Custom-SMTP
+  // laesst sich das Supabase-E-Mail-Template nicht bearbeiten (Source-Editor
+  // gesperrt), es bleibt beim Standard-{{ .ConfirmationURL }}. Der fuehrt ueber
+  // Supabases eigene Domain und haengt die Session als #access_token=...-
+  // Fragment an redirectTo an - Fragmente erreichen den Server nie, weshalb
+  // /auth/confirm (serverseitiger Route Handler, erwartet token_hash als
+  // Query-Param) hier nie greifen wuerde. ResetPasswordGate uebernimmt die
+  // Session stattdessen clientseitig aus dem Fragment. Falls spaeter Custom-
+  // SMTP eingerichtet und das Template auf /auth/confirm umgestellt wird,
+  // ignoriert das customized Template dieses redirectTo ohnehin (fest verdrahtete
+  // URL im Template) - /auth/confirm bleibt als Fallback nutzbar.
   await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${origin}/auth/confirm?next=/passwort-zuruecksetzen`,
+    redirectTo: `${origin}/passwort-zuruecksetzen`,
   })
 }
 

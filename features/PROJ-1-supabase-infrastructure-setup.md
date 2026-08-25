@@ -241,5 +241,6 @@ PROJ-1 liefert keine eigene UI/Route, sondern die Infrastruktur (Supabase-Client
 **Nachträglich erledigt:** GitHub-Repo mit Vercel verbunden — Auto-Deploy bei jedem Push zu `main` aktiv.
 
 **Weiterhin offen:**
-- Error-Tracking (Sentry), DB-Query-Optimierung — siehe `docs/production/*.md`, noch nicht eingerichtet
+- Error-Tracking: Vercel-eigenes Observability/Logging ist ohne Zusatzaufwand aktiv (siehe PROJ-2 Deployment-Abschnitt), kein separates Sentry-Setup nötig
+- DB-Query-Optimierung — siehe `docs/production/database-optimization.md`, noch nicht relevant (keine echte Last)
 - Rate-Limiting bewusst nicht ergänzt (siehe PROJ-2 Deployment-Abschnitt)
