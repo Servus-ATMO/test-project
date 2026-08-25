@@ -238,6 +238,8 @@ Keine weiteren neuen Abhängigkeiten nötig — Formulare/Validierung für das e
 
 PROJ-1 liefert keine eigene UI/Route, sondern die Infrastruktur (Supabase-Client-Layer, Proxy, `profiles`-Tabelle, Storage-Buckets), die mit PROJ-2 zusammen ausgeliefert wurde. In Produktion mitverifiziert: Proxy/Auth-Gate funktioniert (kein 500 durch fehlende ENV-Variablen), Sicherheits-Header aktiv.
 
-**Offen:**
-- GitHub-Repo noch nicht mit dem Vercel-Projekt verbunden (Auto-Deploy bei Push) — Vercel-GitHub-App muss manuell für `Servus-ATMO/test-project` autorisiert werden ([github.com/apps/vercel/installations/new](https://github.com/apps/vercel/installations/new)), aktuell nur manuelle Deploys per `vercel --prod`
-- Error-Tracking (Sentry), Lighthouse-Performance-Check, DB-Query-Optimierung, Rate-Limiting — siehe `docs/production/*.md`, noch nicht eingerichtet
+**Nachträglich erledigt:** GitHub-Repo mit Vercel verbunden — Auto-Deploy bei jedem Push zu `main` aktiv.
+
+**Weiterhin offen:**
+- Error-Tracking (Sentry), DB-Query-Optimierung — siehe `docs/production/*.md`, noch nicht eingerichtet
+- Rate-Limiting bewusst nicht ergänzt (siehe PROJ-2 Deployment-Abschnitt)

@@ -209,7 +209,13 @@ Keine offenen Bugs. Ein zunächst als Critical eingestufter Befund ("Login schl�
 
 Live verifiziert nach Deploy: `/` und `/dashboard` leiten unautorisiert korrekt zu `/login?redirect=...` weiter (307, kein 500 → ENV-Variablen korrekt gesetzt), `/login` und `/passwort-vergessen` rendern fehlerfrei (keine Konsolenfehler), Sicherheits-Header (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`) aktiv. Kein echter Login-Testlauf gegen Produktion (um keine Testnutzer im Produktions-Supabase-Projekt zu hinterlassen) — Login-Flow bereits in `/qa` ausführlich gegen dieselbe Supabase-Instanz verifiziert.
 
-**Offen:**
-- GitHub-Repo-Verbindung für Auto-Deploy bei Push fehlt noch (siehe PROJ-1 Deployment-Abschnitt)
-- Supabase-Dashboard-E-Mail-Template für Passwort-Reset noch nicht auf `/auth/confirm` umgestellt (siehe Open Questions) — Reset-Link aus echter E-Mail funktioniert dadurch noch nicht
-- Error-Tracking, Lighthouse-Check, Rate-Limiting — siehe `docs/production/*.md`
+**Nachträglich erledigt (nach initialem Deploy):**
+- GitHub-Repo mit Vercel verbunden (`vercel git connect`) — Auto-Deploy bei jedem Push zu `main` aktiv
+- Lighthouse-Check gegen `/login` in Produktion: Performance 99, Accessibility 98, Best Practices 96, SEO 91→**100** nach Fix
+- **Bug gefunden + behoben:** `robots.txt`/`sitemap.xml` wurden vom Proxy fälschlich zu `/login` umgeleitet (Matcher schloss nur `favicon.ico` aus) — SEO-Audit deckte das auf. Fix + Regressionstest in `tests/PROJ-2-agentur-login.spec.ts`, erneut deployt und verifiziert (404 statt Redirect)
+- Rate-Limiting bewusst nicht ergänzt (Upstash Redis wäre neue externe Abhängigkeit) — widerspräche der bereits getroffenen Entscheidung "Supabase-Auth-Standard reicht" (siehe Decision Log)
+
+**Weiterhin offen:**
+- Supabase-Dashboard-E-Mail-Template für Passwort-Reset noch nicht auf `/auth/confirm` umgestellt (siehe Open Questions) — Reset-Link aus echter E-Mail funktioniert dadurch noch nicht; ebenso Site-URL in Supabase Auth-Settings noch nicht auf die Produktions-Domain umgestellt
+- Error-Tracking (Sentry) — braucht externe Kontoerstellung, siehe `docs/production/error-tracking.md`
+- Fehlendes `favicon.ico` (kosmetisch, kostet 4 Punkte bei Best Practices)
