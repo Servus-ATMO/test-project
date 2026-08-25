@@ -11,7 +11,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 | Priority | Feature | Status |
 |----------|---------|--------|
 | P0 (MVP) | Supabase Infrastructure Setup | Approved ([PROJ-1](../features/PROJ-1-supabase-infrastructure-setup.md)) |
-| P0 (MVP) | Agentur-Login & Kunden/Projekt-Verwaltung | Planned |
+| P0 (MVP) | Agentur-Login | Planned ([PROJ-2](../features/PROJ-2-agentur-login.md)) |
 | P0 (MVP) | Import-Werkstatt (Journey-Transkript.md + Konzept.md, Ebene 1+3 parsen) | Planned |
 | P0 (MVP) | KI-Anreicherung (Ebene 2 Profildimensionen, Kanten, Konflikterkennung, Impact-Texte) | Planned |
 | P0 (MVP) | DAG/Sankey-Graph-Visualisierung (4 Ebenen, Dossier-Panel) | Planned |
@@ -20,6 +20,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 | P0 (MVP) | Wireframe-Engine (nativer Baustein-Katalog, generiert aus Ebene 3, Drag&Drop, Varianten) | Planned |
 | P0 (MVP) | Wireframe-Export (self-contained HTML/CSS/JS) | Planned |
 | P0 (MVP) | Kunden-Zugriffslink (Ansicht/Mitarbeit) | Planned |
+| P0 (MVP) | Kunden-/Projekt-Verwaltung (CRUD) | Planned |
 | P1 | Mehrseiten-Struktur / Ebene 4 (Hub + Unterseiten, Cross-Page-Links) | Planned |
 | P1 | Konfliktlösungen an reale Wireframe-Varianten koppeln (Grounding) | Planned |
 | P1 | Live-Kopplung Ebene 2 ↔ Wireframe (Fernziel "Phase 2") | Planned |
