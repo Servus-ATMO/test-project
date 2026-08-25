@@ -65,12 +65,48 @@
 <!-- Added by /architecture -->
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| Server Actions statt eigener API-Routen für Login/Logout/Passwort-Reset | Weniger Code, funktioniert ohne Client-JS (progressive enhancement), von Next.js für Formulare empfohlen | 2026-08-25 |
+| Proxy aus PROJ-1 um Redirect-Logik erweitert (statt neuer, separater Middleware) | PROJ-1 hat die Session-Refresh-Logik bewusst schon vorbereitet, genau für diesen Zweck (siehe PROJ-1 Decision Log) | 2026-08-25 |
+| Rücksprung-Parameter wird auf relative Pfade validiert (kein `http://`/`//`) | Open-Redirect-Schutz — verhindert Weiterleitung auf externe, bösartige Domains über einen manipulierten Link | 2026-08-25 |
+| Keine neuen Pakete — `react-hook-form`/`zod`/shadcn-Formkomponenten bereits vorhanden | Vermeidet unnötige Abhängigkeiten, Projekt bringt alles Nötige für Formulare schon mit | 2026-08-25 |
 
 ---
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### A) Struktur (Seiten & Komponenten)
+
+```
+Öffentlicher Bereich
+├── /login
+│   └── LoginForm (E-Mail, Passwort, "Passwort vergessen?"-Link, Anmelden-Button)
+├── /passwort-vergessen
+│   └── ForgotPasswordForm (E-Mail, Absenden-Button)
+└── /passwort-zuruecksetzen
+    └── ResetPasswordForm (neues Passwort, Bestätigung, Absenden-Button)
+
+Geschützter Bereich (gemeinsames Layout, künftig auch von PROJ-17 genutzt)
+├── Header (zeigt eingeloggte E-Mail-Adresse + Logout-Button)
+└── /dashboard (Platzhalter-Startseite — wird von PROJ-17 mit echtem Inhalt ersetzt)
+```
+
+Der in PROJ-1 angelegte Proxy wird um die Weiterleitungs-Logik erweitert: Nicht eingeloggte Nutzer, die eine Seite im geschützten Bereich aufrufen, landen auf `/login` mit einem Rücksprung-Parameter zur ursprünglich gewünschten Seite.
+
+### B) Datenmodell
+
+Keine neuen Tabellen — PROJ-2 nutzt vollständig, was PROJ-1 bereits bereitstellt (`profiles`, Supabase-Auth-Sessions). Die Session selbst wird nicht in einer eigenen Tabelle gespeichert, sondern von Supabase Auth als sicheres Cookie verwaltet (Mechanismus kommt aus PROJ-1).
+
+### C) Technische Entscheidungen (Begründung)
+
+- **Formulare rufen serverseitige Funktionen direkt auf (Server Actions), statt eigene API-Routen zu bauen:** Weniger Code, funktioniert auch ganz ohne JavaScript im Browser, und ist der von Next.js empfohlene Weg für Formulare wie Login/Logout/Passwort-Reset.
+- **Rücksprung-Parameter wird geprüft, bevor weitergeleitet wird:** Nur relative Pfade innerhalb der App werden akzeptiert — verhindert, dass ein manipulierter Link Nutzer auf eine fremde, bösartige Seite umleitet (Open-Redirect-Schutz aus der Spec).
+- **Passwort-Zurücksetzen nutzt den eingebauten E-Mail-Versand von Supabase Auth:** Kein eigenes E-Mail-System nötig, Standard-Funktionalität ohne Zusatzaufwand.
+- **Bestätigungsmeldung beim Passwort-Reset ist immer identisch**, unabhängig davon ob die E-Mail-Adresse existiert: Verhindert, dass Angreifer über die Fehlermeldung herausfinden können, welche E-Mail-Adressen als Accounts existieren (Enumeration-Schutz aus der Spec).
+
+### D) Abhängigkeiten (zu installierende Pakete)
+
+Keine neuen Pakete nötig — alles Erforderliche ist bereits vorhanden: Supabase-Clients (PROJ-1), Formular-Validierung (`react-hook-form` + `zod`, bereits im Projekt), passende UI-Bausteine (`src/components/ui/form.tsx`, `input.tsx`, `button.tsx` aus dem shadcn-Katalog).
 
 ## QA Test Results
 _To be added by /qa_
