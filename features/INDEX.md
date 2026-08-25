@@ -21,7 +21,7 @@ PROJ-1 → PROJ-2 → PROJ-17 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-6 → PR
 |----|---------|----------|---------------|--------|------|---------|
 | PROJ-1 | Supabase Infrastructure Setup | P0 | None | Deployed | [PROJ-1](PROJ-1-supabase-infrastructure-setup.md) | 2026-08-24 |
 | PROJ-2 | Agentur-Login | P0 | PROJ-1 | Deployed | [PROJ-2](PROJ-2-agentur-login.md) | 2026-08-24 |
-| PROJ-3 | Import-Werkstatt (Journey-Transkript + Konzept parsen, Ebene 1+3) | P0 | PROJ-1, PROJ-17 | Roadmap | — | 2026-08-24 |
+| PROJ-3 | Import-Werkstatt (Journey-Transkript + Konzept vollständig parsen) | P0 | PROJ-1, PROJ-17 | Planned | [PROJ-3](PROJ-3-import-werkstatt.md) | 2026-08-24 |
 | PROJ-4 | KI-Anreicherung (Ebene 2 Profildimensionen, Kanten, Konflikterkennung, Impact-Texte) | P0 | PROJ-3 | Roadmap | — | 2026-08-24 |
 | PROJ-5 | DAG/Sankey-Graph-Visualisierung (4 Ebenen, Dossier-Panel) | P0 | PROJ-4 | Roadmap | — | 2026-08-24 |
 | PROJ-6 | Branch-Datenmodell (Antworten ändern, Original/Branch-Vergleich) | P0 | PROJ-3 | Roadmap | — | 2026-08-24 |
