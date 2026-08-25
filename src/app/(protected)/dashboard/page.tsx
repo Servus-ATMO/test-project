@@ -1,11 +1,10 @@
+import { DashboardWidget } from '@/components/clients/dashboard-widget'
+
 export default function DashboardPage() {
   return (
-    <div>
+    <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Willkommen</h1>
-      <p className="mt-2 text-muted-foreground">
-        Dieser Bereich ist ein Platzhalter und wird mit PROJ-17
-        (Kunden-/Projekt-Verwaltung) durch echten Inhalt ersetzt.
-      </p>
+      <DashboardWidget />
     </div>
   )
 }

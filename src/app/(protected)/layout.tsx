@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { LogoutButton } from '@/components/auth/logout-button'
 import { createClient } from '@/lib/supabase/server'
 
@@ -23,9 +24,19 @@ export default async function ProtectedLayout({
     <div className="min-h-screen bg-background">
       <header className="border-b">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <span className="text-sm font-medium">Konzeptfäden</span>
+          <nav className="flex items-center gap-4">
+            <Link href="/dashboard" className="text-sm font-medium">
+              Konzeptfäden
+            </Link>
+            <Link
+              href="/kunden"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Kunden
+            </Link>
+          </nav>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            {email && <span>{email}</span>}
+            {email && <span className="hidden truncate sm:inline">{email}</span>}
             <LogoutButton />
           </div>
         </div>

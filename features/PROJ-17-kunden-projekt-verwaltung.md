@@ -1,8 +1,15 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: Architected
+## Status: In Progress
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (Architektur)
+**Last Updated:** 2026-08-25 (Frontend)
+
+## Implementierungsnotizen
+- Frontend umgesetzt: `/kunden` (Kunden-Übersicht mit Suche + "Archiviert anzeigen"-Toggle), `/kunden/[kundeId]` (Kunde-Detail + Projekt-Liste), `/kunden/[kundeId]/[projektId]` (Projekt-Detail-Platzhalter für PROJ-3 ff.), Dashboard-Widget auf `/dashboard`. Navigation im geschützten Header (`src/app/(protected)/layout.tsx`) um einen "Kunden"-Link ergänzt.
+- Komponenten in `src/components/clients/`: `client-list.tsx`, `client-detail-view.tsx`, `project-detail-view.tsx`, `client-form-dialog.tsx`, `project-form-dialog.tsx`, `delete-alert-dialog.tsx`, `dashboard-widget.tsx`. Formulare mit `react-hook-form` + `zod` (`src/lib/validations/clients.ts`), Typen in `src/lib/clients/types.ts`.
+- **Datenhaltung vorübergehend über `localStorage`, nicht Supabase.** Die `clients`/`projects`-Tabellen aus dem Tech Design existieren erst nach `/backend` — bis dahin übernimmt der Hook `src/hooks/useClients.ts` (inkl. Unit-Tests `useClients.test.ts`) das komplette CRUD-Verhalten 1:1 nach dem im Tech Design beschriebenen Datenmodell (gleiche Feldnamen, gleiche Lösch-Schutzprüfung), damit `/backend` die Persistenz austauschen kann, ohne die UI anzufassen (siehe Backend-Skill-Checkliste "Replace any mock data or localStorage with API calls").
+- Alle Acceptance Criteria im Browser durchgespielt (Playwright, temporäres Review-Skript, danach wieder entfernt): Kunde anlegen → Auto-Redirect ins erste Projekt, Duplikat-E-Mail-Warnung samt "Trotzdem anlegen", Pflichtfeld-Validierung, Projekt anlegen, Archivieren/Reaktivieren (Kunde behält Projekte unverändert), Lösch-Schutzprüfung (deaktiviertes Menü-Item bei vorhandenen Projekten), Dashboard-Widget-Zahlen, Leerzustände auf `/kunden` und Dashboard, Textsuche — keine Konsolenfehler. Zusätzlich PROJ-2-Regressionssuite erneut grün (12/12), da der gemeinsame Header verändert wurde.
+- Beim Testen aufgefallen und behoben: Die E-Mail-Adresse im Header lief bei 375px (Mobile) aus dem sichtbaren Bereich heraus, sobald der neue "Kunden"-Link dazukam — jetzt `hidden sm:inline` auf dem E-Mail-`<span>`, betrifft auch den bestehenden PROJ-2-Header.
 
 ## Dependencies
 - Requires: PROJ-2 (Agentur-Login) — Auth, geschütztes Layout, Dashboard-Platzhalter
@@ -85,6 +92,7 @@
 | Suche client-seitig (im Browser) über die bereits geladene Kundenliste, kein serverseitiger Such-Endpoint | Für die realistische Kundenzahl eines Solo-/Kleinteam-Tools ausreichend performant, spart einen zusätzlichen Request-Roundtrip pro Tastenanschlag | 2026-08-25 |
 | Routing: `/kunden` (Übersicht), `/kunden/[kundeId]` (Projekt-Liste eines Kunden), `/kunden/[kundeId]/[projektId]` (Projekt-Detail/Platzhalter) | Bildet die 1:viele-Beziehung direkt in der URL-Struktur ab, `/kunden/[kundeId]/[projektId]` ist bereits der spätere Einstiegspunkt für PROJ-3 ff. | 2026-08-25 |
 | Keine neuen npm-Pakete nötig | `react-hook-form`, `zod`, alle benötigten shadcn/ui-Komponenten (Table, Dialog, AlertDialog, DropdownMenu, Badge, Input) sind bereits aus PROJ-1/PROJ-2 vorhanden | 2026-08-25 |
+| Frontend-Phase nutzt `localStorage` (Hook `useClients`) statt Supabase-Aufrufen | `clients`/`projects`-Tabellen existieren erst nach `/backend`; Hook bildet Feldnamen, IDs und Lösch-Schutzprüfung 1:1 nach dem Tech-Design-Datenmodell nach, damit `/backend` nur die Persistenzschicht austauschen muss, ohne Komponenten/Props zu ändern | 2026-08-25 |
 
 ---
 <!-- Sections below are added by subsequent skills -->

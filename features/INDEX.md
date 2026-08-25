@@ -35,7 +35,7 @@ PROJ-1 → PROJ-2 → PROJ-17 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-6 → PR
 | PROJ-14 | Interview-Frontend ins Tool integrieren | P2 | None | Roadmap | — | 2026-08-24 |
 | PROJ-15 | Fragenkatalog-Editor (Themenblöcke/Fragen verwaltbar) | P2 | PROJ-14 | Roadmap | — | 2026-08-24 |
 | PROJ-16 | Weitere Projekttypen (nicht nur Landingpage) | P2 | None | Roadmap | — | 2026-08-24 |
-| PROJ-17 | Kunden-/Projekt-Verwaltung (CRUD) | P0 | PROJ-2 | Architected | [PROJ-17](PROJ-17-kunden-projekt-verwaltung.md) | 2026-08-25 |
+| PROJ-17 | Kunden-/Projekt-Verwaltung (CRUD) | P0 | PROJ-2 | In Progress | [PROJ-17](PROJ-17-kunden-projekt-verwaltung.md) | 2026-08-25 |
 
 <!-- Add features above this line -->
 
