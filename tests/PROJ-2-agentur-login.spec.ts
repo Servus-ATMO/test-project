@@ -179,7 +179,10 @@ test.describe('PROJ-2: Agentur-Login', () => {
       password: oldPassword,
       email_confirm: true,
     })
-    expect(createError).toBeNull()
+    if (createError || !userData.user) {
+      throw new Error(`createUser failed: ${createError?.message}`)
+    }
+    const userId = userData.user.id
 
     try {
       const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
@@ -187,10 +190,12 @@ test.describe('PROJ-2: Agentur-Login', () => {
         email,
         options: { redirectTo: `${baseURL}/passwort-zuruecksetzen` },
       })
-      expect(linkError).toBeNull()
+      if (linkError || !linkData) {
+        throw new Error(`generateLink failed: ${linkError?.message}`)
+      }
 
       // Simuliert den Klick auf den Link aus der E-Mail.
-      await page.goto(linkData!.properties.action_link, { waitUntil: 'networkidle' })
+      await page.goto(linkData.properties.action_link, { waitUntil: 'networkidle' })
       await expect(page).toHaveURL(/\/passwort-zuruecksetzen/)
 
       await page.fill('input[name="password"]', newPassword)
@@ -213,7 +218,7 @@ test.describe('PROJ-2: Agentur-Login', () => {
       await page.click('button[type="submit"]')
       await expect(page.getByText('E-Mail oder Passwort falsch.')).toBeVisible()
     } finally {
-      await supabase.auth.admin.deleteUser(userData!.user.id)
+      await supabase.auth.admin.deleteUser(userId)
     }
   })
 
