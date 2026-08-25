@@ -1,10 +1,10 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: In Progress
+## Status: Approved
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (Backend, Refine nachgezogen)
+**Last Updated:** 2026-08-25 (QA, zweite Runde)
 
-**Hinweis:** Die Refine-Runde (Lösch-Schutz-Verschärfung: erst archivieren, dann löschen) ist jetzt implementiert (siehe Implementierungsnotizen unten), aber noch **nicht erneut deployt** — der Produktions-Stand entspricht noch der vorherigen Version. Status bleibt "In Progress", bis `/qa` erneut gelaufen und `/deploy` erneut ausgeführt wurde.
+**Hinweis:** Die Refine-Runde (Lösch-Schutz-Verschärfung: erst archivieren, dann löschen) ist implementiert und erneut QA-geprüft (siehe QA Test Results, zweite Runde), aber noch **nicht erneut deployt** — der Produktions-Stand entspricht noch der vorherigen Version. Ein Medium-Bug (BUG-1, RLS deckt die neue Bedingung nicht ab) ist bekannt und dokumentiert, blockiert aber laut Produktionsreife-Entscheidung kein Deployment.
 
 ## Implementierungsnotizen
 - **Refine nachgezogen (Lösch-Schutz-Verschärfung, 2026-08-25):** `deleteClient`/`deleteProject` in `src/lib/clients/actions.ts` prüfen jetzt zusätzlich `status === 'archived'`, bevor überhaupt die abhängige-Daten-Prüfung greift — serverseitig, unabhängig von der UI (Defense in Depth, gleiches Muster wie die bestehende Projekt-Zählung). Auf UI-Seite spiegelt `client-list.tsx` (`getDeleteBlockReason`) und `client-detail-view.tsx` (`getProjectDeleteBlockReason`, dort vorher komplett ungeschützt — Projekte hatten bislang gar keine Lösch-Bedingung) dieselbe Logik mit differenzierten Tooltip-Texten ("Muss zuerst archiviert werden…" vs. "…hat noch Projekte"). Bestehende permanente E2E-Suite (`tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`) entsprechend angepasst (archiviert jetzt vor jedem Löschversuch) und erneut grün auf Chromium + WebKit (3/3 je Browser), PROJ-2-Regressionssuite weiterhin 12/12.
@@ -192,11 +192,11 @@ Keine neuen npm-Pakete nötig — alle benötigten Bausteine (`react-hook-form`,
 
 ## QA Test Results
 
-**Tested:** 2026-08-25
+**Tested:** 2026-08-25 (zweite Runde, nach Refine „erst archivieren, dann löschen")
 **App URL:** http://localhost:3000
 **Tester:** QA Engineer (AI)
 
-> ⚠️ **Veraltet seit Refine vom 2026-08-25:** AC-6/AC-7 unten beziehen sich auf die Spec-Version *vor* der Lösch-Schutz-Verschärfung (erst archivieren, dann löschen). Die Ergebnisse waren zum damaligen Implementierungsstand korrekt, decken aber die neue Anforderung noch nicht ab. Erneutes `/qa` nötig, sobald `/backend` die Änderung umgesetzt hat.
+**Nachtrag zur zweiten Runde:** AC-6/AC-7 unten sind gegenüber der ersten QA-Runde aktualisiert und decken jetzt die Archivieren-vor-Löschen-Regel ab. Ein neuer Sicherheitsbefund (BUG-1) kam dabei hinzu — siehe „Bugs Found".
 
 ### Acceptance Criteria Status
 
@@ -216,11 +216,14 @@ Keine neuen npm-Pakete nötig — alle benötigten Bausteine (`react-hook-form`,
 #### AC-5: Archivieren/Reaktivieren + Filter
 - [x] "Archivieren" → Kunde verschwindet aus Standardansicht, bleibt über "Archiviert anzeigen" sichtbar und reaktivierbar
 
-#### AC-6: Endgültiges Löschen ohne abhängige Daten
-- [x] Kunde ohne Projekte (bzw. Projekt ohne abhängige Daten) → "Endgültig löschen" + Bestätigung entfernt den Datensatz unwiderruflich (verifiziert per SQL: Zeile nach dem Löschen nicht mehr vorhanden)
+#### AC-6: Endgültiges Löschen — nur wenn bereits archiviert und ohne abhängige Daten
+- [x] Kunde/Projekt archiviert und ohne abhängige Daten → "Endgültig löschen" + Bestätigung entfernt den Datensatz unwiderruflich (verifiziert per SQL: Zeile nach dem Löschen nicht mehr vorhanden), sowohl für Kunde als auch für Projekt
 
-#### AC-7: Löschoption deaktiviert bei abhängigen Daten
-- [x] Kunde mit mindestens einem Projekt → "Endgültig löschen" ist im Menü deaktiviert (`data-disabled`), mit Tooltip-Begründung; nur Archivieren bleibt möglich
+#### AC-7: Löschoption deaktiviert bei aktivem Status oder abhängigen Daten
+- [x] Aktiver (nicht archivierter) Kunde/Projekt → "Endgültig löschen" ist deaktiviert (`data-disabled`), Tooltip „Muss zuerst archiviert werden…", unabhängig davon ob abhängige Daten existieren
+- [x] Archivierter Kunde mit mindestens einem Projekt → weiterhin deaktiviert, Tooltip „…hat noch Projekte"
+- [x] Tooltip-Priorität verifiziert: Bei einem aktiven Kunden MIT Projekten wird der "Erst archivieren"-Hinweis angezeigt, nicht der "hat noch Projekte"-Hinweis (der naheliegendere erste Schritt)
+- [x] Vorher fehlender Lösch-Schutz für Projekte in der UI ergänzt (`client-detail-view.tsx` hatte zuvor gar keine Bedingung — jedes Projekt war unabhängig vom Status direkt löschbar)
 
 #### AC-8: Dashboard-Widget
 - [x] Widget zeigt korrekte Kennzahlen ("X Kunden, Y aktive Projekte") und den Link "Alle Kunden ansehen →"
@@ -258,23 +261,33 @@ Beim Code-Review fiel auf, dass `createProject` (`src/lib/clients/actions.ts`) n
 - [x] Input validation / XSS: Firmenname `QA17-<img src=x onerror=alert(1)> GmbH` wird als reiner Text gerendert (kein `<img>`-Element im DOM, kein Alert ausgelöst) — React entschärft das automatisch, es wird nirgends `dangerouslySetInnerHTML` verwendet
 - [x] Shared Visibility ist beabsichtigt (Single-Tenant, siehe PROJ-1 Decision Log) und funktioniert wie vorgesehen — kein IDOR-Test anwendbar, da es kein Besitzer-Konzept gibt
 - [ ] N/A Rate limiting: für dieses CRUD-Feature nicht spezifiziert (siehe PROJ-2 Decision Log: kein zusätzliches UI-Rate-Limiting im MVP)
+- [ ] **BUG-1 (siehe unten):** "Erst archivieren, dann löschen" ist nur in der Server Action durchgesetzt, nicht in der RLS-Policy — per direktem Supabase-Aufruf (unter Umgehung der Next.js-App) umgehbar
 
-### Regressionstests
-- [x] `npm test` (Vitest): 25/25 grün (7 Testdateien, inkl. neuer `recent-activity.test.ts`)
+### Regressionstests (zweite Runde)
+- [x] `npm test` (Vitest): 25/25 grün
 - [x] `npm run build` / `npm run lint`: fehlerfrei
-- [x] PROJ-2-Regressionssuite (`tests/PROJ-2-agentur-login.spec.ts`): 12/12 grün auf Chromium — relevant, da der gemeinsame Header (`src/app/(protected)/layout.tsx`) für PROJ-17 verändert wurde
-- [x] Neue permanente E2E-Suite `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`: 3/3 grün auf Chromium UND auf Mobile Safari/WebKit (deckt alle zehn Acceptance Criteria, die Sicherheitsprüfungen und den 375px-Mobile-Check ab)
+- [x] PROJ-2-Regressionssuite: 12/12 grün auf Chromium
+- [x] `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`: 3/3 grün auf Chromium UND Mobile Safari/WebKit — Suite musste angepasst werden (archiviert jetzt vor jedem Löschversuch; Dashboard-/Leerzustand-Prüfungen auf Muster statt Exaktwert umgestellt, da die Umgebung inzwischen dauerhaft echte Kunden enthält, siehe Implementierungsnotizen)
 
 ### Bugs Found
-Keine. Die einzigen während der QA aufgetretenen Fehlschläge waren zwei Test-Skript-Fehler (Playwright-Testisolation zwischen `test()`-Blöcken bzw. Timing beim Schließen eines Dropdown-Menüs vor einer Navigation) — beide beim Schreiben der permanenten Suite korrigiert, keine Auswirkung auf die App selbst.
+
+#### BUG-1: „Erst archivieren, dann löschen" nur in der Server Action durchgesetzt, nicht in der Datenbank
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. Einen aktiven (nicht archivierten) Kunden anlegen
+  2. Statt über die App direkt per Supabase-Client (mit einer normalen, eingeloggten Nutzer-Session, nicht Service-Role) einen `DELETE` auf `clients` mit der passenden `id` ausführen
+  3. Erwartet: Wird abgelehnt, da der Kunde noch nicht archiviert ist (wie es die App über die Server Action erzwingt)
+  4. Tatsächlich: Der Löschvorgang wird von der Datenbank anstandslos ausgeführt — die RLS-DELETE-Policy lautet `USING (true)`, sie kennt die Archiviert-Bedingung nicht. Live nachgestellt (Testnutzer via Supabase-Admin-API angelegt, `signInWithPassword` + direkter `.from('clients').delete()`-Aufruf): `count: 1`, Zeile war anschließend weg.
+- **Einordnung:** Kein Sicherheitsloch im engeren Sinn — alle eingeloggten Mitarbeiter dürfen laut Shared-Visibility-Entscheidung ohnehin jeden Kunden/jedes Projekt löschen, ein Bypass verschafft also keine neuen Rechte, nur einen übersprungenen Bestätigungsschritt. Aber inkonsistent mit dem im selben Feature bereits etablierten Defense-in-Depth-Muster (die „hat noch Projekte"-Bedingung ist zusätzlich per `ON DELETE RESTRICT` auf DB-Ebene abgesichert, die „muss archiviert sein"-Bedingung aktuell nicht).
+- **Priority:** Sollte behoben werden (RLS-DELETE-Policy auf `USING (status = 'archived')` verschärfen), blockiert aber kein Deployment.
 
 ### Summary
 - **Acceptance Criteria:** 10/10 passed
 - **Edge Cases:** 3/5 aktiv verifiziert, 2/5 per Code-Review abgedeckt (siehe oben, keine offenen Zweifel)
-- **Bugs Found:** 0
-- **Security:** Pass (Auth-Schutz, RLS/GRANT-Schutz, XSS-Schutz alle bestätigt)
-- **Production Ready:** YES
-- **Recommendation:** Deploy
+- **Bugs Found:** 1 (Medium — RLS deckt die neue Lösch-Bedingung nicht ab, kein Autorisierungsproblem im Shared-Visibility-Modell)
+- **Security:** Pass mit einem Medium-Befund (Auth-Schutz, GRANT-Schutz, XSS-Schutz weiterhin bestätigt; RLS-Lücke bei der neuen Archiviert-Bedingung siehe BUG-1)
+- **Production Ready:** YES — kein Critical/High-Bug, BUG-1 blockiert laut Projekt-Konvention (siehe QA-Skill) das Deployment nicht
+- **Recommendation:** Deploy; BUG-1 zeitnah nachziehen (kleiner, risikoarmer Policy-Fix)
 
 ## Deployment
 
