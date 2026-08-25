@@ -1,8 +1,10 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: Deployed
+## Status: In Progress
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (Deploy)
+**Last Updated:** 2026-08-25 (Refine)
+
+**Hinweis:** Diese Refine-Runde (Lösch-Schutz-Verschärfung: erst archivieren, dann löschen) ist noch **nicht** implementiert — der auf Produktion deployte Stand entspricht noch der vorherigen Spec-Version. Status daher zurück auf "In Progress", bis `/backend PROJ-17` die Änderung nachgezogen hat.
 
 ## Implementierungsnotizen
 - Frontend umgesetzt: `/kunden` (Kunden-Übersicht mit Suche + "Archiviert anzeigen"-Toggle), `/kunden/[kundeId]` (Kunde-Detail + Projekt-Liste), `/kunden/[kundeId]/[projektId]` (Projekt-Detail-Platzhalter für PROJ-3 ff.), Dashboard-Widget auf `/dashboard`. Navigation im geschützten Header (`src/app/(protected)/layout.tsx`) um einen "Kunden"-Link ergänzt.
@@ -35,6 +37,7 @@
 - Harte Eindeutigkeitsprüfung der Ansprechpartner-E-Mail auf DB-Ebene — nur weiche UI-Warnung
 - Komplexe Filter/Sortierung (z. B. nach Status, Datum, verantwortlichem Mitarbeiter) — nur Textsuche + "Archiviert anzeigen"-Toggle für MVP
 - Endgültiges Löschen von Kunden/Projekten MIT abhängigen Daten — nur Archivieren möglich, sobald echte Inhalte existieren; kann später erweitert werden
+- Endgültiges Löschen direkt aus dem aktiven Zustand (ohne vorherige Archivierung) — bewusst nicht möglich, erzwingt einen Zwischenschritt gegen versehentliches Löschen (ergänzt bei der PROJ-3-Spec-Interview, 2026-08-25)
 
 ## Acceptance Criteria
 
@@ -45,8 +48,9 @@
 - [ ] Angenommen das Kunden-Formular wird ohne Pflichtfelder (Firmenname, Ansprechpartner-E-Mail) abgeschickt, dann erscheinen Validierungsfehler für die fehlenden Felder und es wird kein Kunde angelegt
 - [ ] Angenommen ein Kunde existiert, wenn der Nutzer ein weiteres Projekt für diesen Kunden anlegt, dann erscheint es in der Projekt-Liste dieses Kunden
 - [ ] Angenommen ein Kunde oder Projekt existiert, wenn der Nutzer "Archivieren" wählt, dann verschwindet der Eintrag aus der Standardansicht, bleibt aber über den Filter "Archiviert anzeigen" sichtbar und kann von dort reaktiviert werden
-- [ ] Angenommen ein Kunde/Projekt hat keine abhängigen Daten (z. B. noch keinen Interview-Import), wenn der Nutzer "Endgültig löschen" wählt und den Bestätigungsdialog bestätigt, dann wird der Datensatz unwiderruflich entfernt
-- [ ] Angenommen ein Kunde/Projekt hat bereits abhängige Daten, wenn der Nutzer versucht, ihn endgültig zu löschen, dann ist die Löschoption deaktiviert bzw. wird verhindert, nur Archivieren bleibt möglich
+- [ ] Angenommen ein Kunde/Projekt ist bereits archiviert und hat keine abhängigen Daten (z. B. noch keinen Interview-Import), wenn der Nutzer "Endgültig löschen" wählt und den Bestätigungsdialog bestätigt, dann wird der Datensatz unwiderruflich entfernt
+- [ ] Angenommen ein Kunde/Projekt ist noch aktiv (nicht archiviert), dann ist die Löschoption deaktiviert — unabhängig davon, ob abhängige Daten existieren; zuerst muss archiviert werden
+- [ ] Angenommen ein bereits archivierter Kunde/Projekt hat abhängige Daten, wenn der Nutzer versucht, ihn endgültig zu löschen, dann ist die Löschoption weiterhin deaktiviert bzw. wird verhindert
 - [ ] Angenommen es existiert mindestens ein Kunde, wenn der Nutzer das Dashboard aufruft, dann zeigt das Kunden-Widget die Gesamtzahl an Kunden/aktiven Projekten sowie die 3–5 zuletzt bearbeiteten Einträge, mit einem Link "Alle Kunden ansehen" zu `/kunden`
 - [ ] Angenommen noch kein Kunde existiert, wenn der Nutzer `/kunden` oder das Dashboard aufruft, dann wird ein Leerzustand mit Hinweistext und "Ersten Kunden anlegen"-Button angezeigt (auf dem Dashboard in reduzierter Form)
 - [ ] Angenommen der Nutzer gibt einen Suchbegriff auf `/kunden` ein, dann wird die Liste live auf Kunden gefiltert, deren Firmenname oder Ansprechpartner-Name den Begriff enthält
@@ -57,6 +61,7 @@
 - Was passiert bei einem Netzwerk-/Serverfehler beim Speichern eines Kunden-/Projekt-Formulars? → Fehlermeldung erscheint, eingegebene Formulardaten bleiben erhalten (analog PROJ-2 Login-Verhalten).
 - Was passiert, wenn ein Projekt gelöscht/archiviert wird, aber der zugehörige Kunde noch aktiv ist? → Nur das Projekt ändert sich, der Kunde bleibt unberührt.
 - Was passiert, wenn der letzte verbleibende (nicht archivierte) Kunde archiviert wird? → `/kunden` und das Dashboard-Widget zeigen den normalen Leerzustand, kein Fehler; über "Archiviert anzeigen" bleibt der Kunde sichtbar.
+- Was passiert, wenn ein aktiver Kunde/Projekt ohne jegliche abhängige Daten gelöscht werden soll? → Nicht direkt möglich; "Endgültig löschen" bleibt deaktiviert, bis der Kunde/das Projekt zuerst archiviert wurde (Sicherheitsbremse gegen versehentliches Löschen, ergänzt bei der PROJ-3-Spec-Interview).
 
 ## Technical Requirements (optional)
 - Security: Alle Routen unter dem bestehenden geschützten Layout aus PROJ-2 — nur eingeloggte Mitarbeiter erreichen `/kunden`
@@ -82,6 +87,7 @@
 | Kein Konfliktschutz bei gleichzeitiger Bearbeitung (last-write-wins) | Solo-/Kleinteam-Projekt (PRD Constraints), gleichzeitige Bearbeitung ist ein seltener Randfall, Aufwand für Konflikterkennung steht in keinem Verhältnis zum Nutzen | 2026-08-25 |
 | Realtime-Presence-Hinweis explizit zurückgestellt (siehe Out of Scope) | Zusätzliche Komplexität ohne echten Konfliktschutz-Nutzen, da ohnehin last-write-wins gilt; kann bei Bedarf später nachgerüstet werden | 2026-08-25 |
 | Nur Textsuche (Firmenname/Ansprechpartner) + "Archiviert anzeigen"-Toggle für die MVP-Liste | Ausreichend für realistische Kundenzahl in kleinem Team, spart UI-Komplexität gegenüber vollem Filter-/Sortier-System | 2026-08-25 |
+| **[Refine]** Endgültiges Löschen erfordert zusätzlich, dass der Kunde/das Projekt bereits archiviert ist — nicht mehr direkt aus dem aktiven Zustand löschbar, gilt einheitlich für Kunde UND Projekt | Ergänzende Sicherheitsbremse, während der PROJ-3-Spec-Interview festgelegt: ein erzwungener Zwischenschritt (erst archivieren) reduziert versehentliche endgültige Löschungen; einheitliche Regel statt unterschiedlicher Löschlogik je Entität ist leichter zu merken | 2026-08-25 |
 
 ### Technical Decisions
 <!-- Added by /architecture -->
@@ -187,6 +193,8 @@ Keine neuen npm-Pakete nötig — alle benötigten Bausteine (`react-hook-form`,
 **Tested:** 2026-08-25
 **App URL:** http://localhost:3000
 **Tester:** QA Engineer (AI)
+
+> ⚠️ **Veraltet seit Refine vom 2026-08-25:** AC-6/AC-7 unten beziehen sich auf die Spec-Version *vor* der Lösch-Schutz-Verschärfung (erst archivieren, dann löschen). Die Ergebnisse waren zum damaligen Implementierungsstand korrekt, decken aber die neue Anforderung noch nicht ab. Erneutes `/qa` nötig, sobald `/backend` die Änderung umgesetzt hat.
 
 ### Acceptance Criteria Status
 
