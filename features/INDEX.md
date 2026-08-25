@@ -19,7 +19,7 @@ PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-6 → PROJ-7 → PRO
 
 | ID | Feature | Priority | Dependencies | Status | Spec | Created |
 |----|---------|----------|---------------|--------|------|---------|
-| PROJ-1 | Supabase Infrastructure Setup | P0 | None | Planned | [PROJ-1](PROJ-1-supabase-infrastructure-setup.md) | 2026-08-24 |
+| PROJ-1 | Supabase Infrastructure Setup | P0 | None | Architected | [PROJ-1](PROJ-1-supabase-infrastructure-setup.md) | 2026-08-24 |
 | PROJ-2 | Agentur-Login & Kunden/Projekt-Verwaltung | P0 | PROJ-1 | Roadmap | — | 2026-08-24 |
 | PROJ-3 | Import-Werkstatt (Journey-Transkript + Konzept parsen, Ebene 1+3) | P0 | PROJ-1, PROJ-2 | Roadmap | — | 2026-08-24 |
 | PROJ-4 | KI-Anreicherung (Ebene 2 Profildimensionen, Kanten, Konflikterkennung, Impact-Texte) | P0 | PROJ-3 | Roadmap | — | 2026-08-24 |

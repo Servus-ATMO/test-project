@@ -63,6 +63,11 @@
 <!-- Added by /architecture -->
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| `@supabase/ssr` statt reinem `@supabase/supabase-js` | Next.js App Router braucht korrektes Cookie-basiertes Session-Handling über Server/Client/Middleware hinweg — offiziell empfohlener Weg für dieses Setup | 2026-08-25 |
+| Getrennte Server- und Browser-Client-Instanzen | Verhindert versehentliches Leaken des Service-Role-Keys in den Client-Bundle | 2026-08-25 |
+| Middleware zur Session-Aktualisierung auf jedem Request | Ohne sie bleiben abgelaufene Sessions inkonsistent gültig, bis der Nutzer manuell neu lädt | 2026-08-25 |
+| DB-Trigger statt Anwendungscode für automatische `profiles`-Anlage | Trigger kann nicht vergessen/umgangen werden, unabhängig vom Anmeldeweg | 2026-08-25 |
+| Schema-Änderungen als versionierte Migrationen (Supabase CLI/MCP) statt manueller Dashboard-Änderungen | Nachvollziehbarkeit im Git-Verlauf, kein Drift zwischen Umgebungen | 2026-08-25 |
 
 ## Grober Schema-Entwurf (Orientierung für spätere Features)
 *Nicht Teil der Implementierung von PROJ-1 — dient `/architecture` als Ausgangspunkt bei PROJ-2 ff.*
@@ -84,7 +89,58 @@
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### A) Struktur (keine sichtbare UI in PROJ-1 — reine Infrastruktur)
+
+```
+App-weite Infrastruktur
+├── Supabase-Anbindung
+│   ├── Server-seitiger Client   (für Server Components/Actions)
+│   ├── Browser-Client           (für Client Components)
+│   └── Middleware                (hält Session pro Request aktuell,
+│                                   leitet bei abgelaufener Session weiter)
+├── Datenbank
+│   └── Tabelle "profiles"
+│       └── Trigger: legt bei erster Anmeldung automatisch einen
+│                     profiles-Eintrag an
+├── Storage
+│   ├── Bucket "imports"   (privat — rohe Interview-Dateien)
+│   └── Bucket "exports"   (privat — generierte Wireframe-Pakete)
+└── Konfiguration
+    ├── .env.local           (echte Werte, nicht versioniert)
+    └── .env.local.example   (Vorlage, versioniert, ohne echte Werte)
+```
+
+Login-Formular, Passwort-Reset-UI etc. entstehen erst bei PROJ-2 — PROJ-1 liefert nur die Schicht darunter, die PROJ-2 dann verwendet.
+
+### B) Datenmodell (in einfachen Worten)
+
+**Tabelle `profiles`** — ein Eintrag pro Agentur-Mitarbeiter:
+- Eindeutige ID (dieselbe wie beim Supabase-Login-Konto)
+- E-Mail-Adresse
+- Anzeigename
+- Erstellt-Zeitstempel
+
+Zugriffsregel: Jeder eingeloggte Mitarbeiter darf alle Profile lesen (später z. B. für "bearbeitet von"-Anzeigen), aber nur sein eigenes bearbeiten. Einträge werden nicht über die App gelöscht.
+
+**Storage-Buckets:**
+- `imports`: rohe `.md`-Dateien, die die Agentur importiert — nur für eingeloggte Mitarbeiter sichtbar
+- `exports`: fertige Wireframe-HTML-Pakete — vorerst ebenfalls nur intern; ein zeitlich befristeter Kunden-Zugriff kommt erst mit PROJ-10 dazu
+
+### C) Technische Entscheidungen (Begründung)
+
+- **Getrennte Server-/Browser-Clients statt eines einzigen Clients:** Verhindert, dass sensible Zugriffsschlüssel versehentlich im Browser landen.
+- **Middleware zur Session-Aktualisierung:** Prüft bei jedem Seitenaufruf im Hintergrund, ob die Sitzung noch gültig ist.
+- **Datenbank-Trigger statt Anwendungscode für die Profil-Anlage:** Kann nicht vergessen oder umgangen werden, auch bei künftigen neuen Anmeldewegen.
+- **Row Level Security von Anfang an aktiv** (auf `profiles` und beiden Storage-Buckets): Grundprinzip aus den Projekt-Regeln, verhindert Zugriff auf fremde Daten bei falsch konfiguriertem Client.
+- **Datenbank-Änderungen als versionierte Migrationen statt manueller Dashboard-Klicks:** Nachvollziehbar im Git-Verlauf, reproduzierbar, kein Drift zwischen Umgebungen.
+
+### D) Abhängigkeiten (zu installierende Pakete)
+
+- **Supabase-Next.js-Anbindung** (`@supabase/ssr`) — offizielles Paket für serverseitige Sitzungsverwaltung im Next.js App Router
+- **Supabase-Basis-Client** (`@supabase/supabase-js`) — Grundlage, auf der die Next.js-Anbindung aufbaut
+
+Keine weiteren neuen Abhängigkeiten nötig — Formulare/Validierung für das eigentliche Login-UI kommen erst mit PROJ-2.
 
 ## QA Test Results
 _To be added by /qa_
