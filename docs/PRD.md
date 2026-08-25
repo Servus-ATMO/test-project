@@ -20,7 +20,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 | P0 (MVP) | Wireframe-Engine (nativer Baustein-Katalog, generiert aus Ebene 3, Drag&Drop, Varianten) | Planned |
 | P0 (MVP) | Wireframe-Export (self-contained HTML/CSS/JS) | Planned |
 | P0 (MVP) | Kunden-Zugriffslink (Ansicht/Mitarbeit) | Planned |
-| P0 (MVP) | Kunden-/Projekt-Verwaltung (CRUD) | Planned ([PROJ-17](../features/PROJ-17-kunden-projekt-verwaltung.md)) |
+| P0 (MVP) | Kunden-/Projekt-Verwaltung (CRUD) | Deployed ([PROJ-17](../features/PROJ-17-kunden-projekt-verwaltung.md)) |
 | P1 | Mehrseiten-Struktur / Ebene 4 (Hub + Unterseiten, Cross-Page-Links) | Planned |
 | P1 | Konfliktlösungen an reale Wireframe-Varianten koppeln (Grounding) | Planned |
 | P1 | Live-Kopplung Ebene 2 ↔ Wireframe (Fernziel "Phase 2") | Planned |

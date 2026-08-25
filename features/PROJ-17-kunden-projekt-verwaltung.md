@@ -1,8 +1,8 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (QA)
+**Last Updated:** 2026-08-25 (Deploy)
 
 ## Implementierungsnotizen
 - Frontend umgesetzt: `/kunden` (Kunden-Übersicht mit Suche + "Archiviert anzeigen"-Toggle), `/kunden/[kundeId]` (Kunde-Detail + Projekt-Liste), `/kunden/[kundeId]/[projektId]` (Projekt-Detail-Platzhalter für PROJ-3 ff.), Dashboard-Widget auf `/dashboard`. Navigation im geschützten Header (`src/app/(protected)/layout.tsx`) um einen "Kunden"-Link ergänzt.
@@ -267,4 +267,13 @@ Keine. Die einzigen während der QA aufgetretenen Fehlschläge waren zwei Test-S
 - **Recommendation:** Deploy
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-08-25
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Vercel Project:** atmodesign/test-project
+
+Migration `create_clients_and_projects_tables` lief bereits während `/backend` gegen dieselbe Supabase-Instanz, die auch von Produktion genutzt wird (kein separates Staging-Projekt, siehe PROJ-1) — kein zusätzlicher Migrationsschritt beim Deploy nötig. Keine neuen Umgebungsvariablen, keine neuen npm-Pakete (siehe Tech Design).
+
+Live verifiziert nach Deploy: `/login`, `/dashboard` und `/kunden` laden fehlerfrei (200, Security-Header aktiv), `/kunden` ohne Login leitet korrekt mit 307 zu `/login?redirect=...` weiter. Login mit dem bereits bestehenden Arbeits-Account (`servus@atmodesign.de`) gegen Produktion durchgeführt und per Screenshot geprüft: Dashboard-Widget und `/kunden` zeigen beide korrekt den echten Leerzustand ("Noch keine Kunden angelegt") — bestätigt die Live-Verbindung zur Produktions-Datenbank, keine Konsolenfehler. Kein Test-Kunde in Produktion angelegt (gleiche Vorsicht wie beim PROJ-2-Deploy, um die Produktionsdaten nicht zu verschmutzen) — die volle CRUD-Funktionalität wurde bereits in `/qa` gegen dieselbe Supabase-Instanz ausführlich verifiziert.
+
+PROJ-2-Regressionssuite (12/12) und die neue PROJ-17-Suite (3/3, Chromium + WebKit) liefen vor dem Push lokal grün gegen dieselbe Datenbank.
