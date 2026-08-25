@@ -2,12 +2,13 @@
 
 ## Status: Approved
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (QA, zweite Runde)
+**Last Updated:** 2026-08-25 (BUG-1-Fix)
 
-**Hinweis:** Die Refine-Runde (Lösch-Schutz-Verschärfung: erst archivieren, dann löschen) ist implementiert und erneut QA-geprüft (siehe QA Test Results, zweite Runde), aber noch **nicht erneut deployt** — der Produktions-Stand entspricht noch der vorherigen Version. Ein Medium-Bug (BUG-1, RLS deckt die neue Bedingung nicht ab) ist bekannt und dokumentiert, blockiert aber laut Produktionsreife-Entscheidung kein Deployment.
+**Hinweis:** Die Refine-Runde (Lösch-Schutz-Verschärfung: erst archivieren, dann löschen) inkl. BUG-1-Fix (RLS-Policy verschärft) ist vollständig implementiert und QA-geprüft, aber noch **nicht erneut deployt** — der Produktions-Stand entspricht noch der vorherigen Version.
 
 ## Implementierungsnotizen
-- **Refine nachgezogen (Lösch-Schutz-Verschärfung, 2026-08-25):** `deleteClient`/`deleteProject` in `src/lib/clients/actions.ts` prüfen jetzt zusätzlich `status === 'archived'`, bevor überhaupt die abhängige-Daten-Prüfung greift — serverseitig, unabhängig von der UI (Defense in Depth, gleiches Muster wie die bestehende Projekt-Zählung). Auf UI-Seite spiegelt `client-list.tsx` (`getDeleteBlockReason`) und `client-detail-view.tsx` (`getProjectDeleteBlockReason`, dort vorher komplett ungeschützt — Projekte hatten bislang gar keine Lösch-Bedingung) dieselbe Logik mit differenzierten Tooltip-Texten ("Muss zuerst archiviert werden…" vs. "…hat noch Projekte"). Bestehende permanente E2E-Suite (`tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`) entsprechend angepasst (archiviert jetzt vor jedem Löschversuch) und erneut grün auf Chromium + WebKit (3/3 je Browser), PROJ-2-Regressionssuite weiterhin 12/12.
+- **BUG-1-Fix (2026-08-25):** Migration `enforce_archived_before_delete` — `ALTER POLICY` auf den DELETE-Policies von `clients` und `projects`, von `USING (true)` auf `USING (status = 'archived')`. Die Archivieren-vor-Löschen-Regel gilt damit auch auf Datenbankebene, nicht mehr nur in der Server Action — konsistent mit dem bereits bestehenden `ON DELETE RESTRICT` für die "hat noch Projekte"-Bedingung. Live verifiziert (echter Bypass-Versuch mit normaler Nutzer-Session: vorher `count: 1`/Zeile weg, nachher `count: 0`/Zeile bleibt, nach Archivieren dann `count: 1`/Zeile weg). Als permanenter Regressionstest in `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts` ergänzt (4/4 grün auf Chromium + WebKit). PROJ-2-Regressionssuite weiterhin 12/12, `npm test`/`build`/`lint` unverändert sauber.
+- **Refine nachgezogen (Lösch-Schutz-Verschärfung, 2026-08-25):** `deleteClient`/`deleteProject` in `src/lib/clients/actions.ts` prüfen jetzt zusätzlich `status === 'archived'`, bevor überhaupt die abhängige-Daten-Prüfung greift — serverseitig, unabhängig von der UI (Defense in Depth, gleiches Muster wie die bestehende Projekt-Zählung). Auf UI-Seite spiegelt `client-list.tsx` (`getDeleteBlockReason`) und `client-detail-view.tsx` (`getProjectDeleteBlockReason`, dort vorher komplett ungeschützt — Projekte hatten bislang gar keine Lösch-Bedingung) dieselbe Logik mit differenzierten Tooltip-Texten ("Muss zuerst archiviert werden…" vs. "…hat noch Projekte"). Bestehende permanente E2E-Suite (`tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`) entsprechend angepasst (archiviert jetzt vor jedem Löschversuch) und erneut grün auf Chromium + WebKit, PROJ-2-Regressionssuite weiterhin 12/12.
 - **Beim Testen aufgefallen und behoben (Test-Skript, kein App-Bug):** Die Umgebung enthält inzwischen dauerhaft echte Kunden ("1. Testkunde"/"2. Testkunde", vom Nutzer selbst angelegt) — die permanente Suite prüfte bislang einen exakten "0 Kunden gesamt"-Leerzustand und einen exakten Dashboard-Zahlenwert, beides war dadurch nicht mehr zuverlässig. Auf Muster-Matching (`/\d+ Kunden?, .../`) bzw. auf die umgebungsunabhängige Such-Leerzustand-Variante umgestellt; der reine "0 Kunden"-Leerzustand bleibt durch die ursprüngliche `/qa`-Runde (gegen eine damals leere Datenbank) abgedeckt.
 - Frontend umgesetzt: `/kunden` (Kunden-Übersicht mit Suche + "Archiviert anzeigen"-Toggle), `/kunden/[kundeId]` (Kunde-Detail + Projekt-Liste), `/kunden/[kundeId]/[projektId]` (Projekt-Detail-Platzhalter für PROJ-3 ff.), Dashboard-Widget auf `/dashboard`. Navigation im geschützten Header (`src/app/(protected)/layout.tsx`) um einen "Kunden"-Link ergänzt.
 - Komponenten in `src/components/clients/`: `client-list.tsx`, `client-detail-view.tsx`, `project-detail-view.tsx`, `client-form-dialog.tsx`, `project-form-dialog.tsx`, `delete-alert-dialog.tsx`, `dashboard-widget.tsx`. Formulare mit `react-hook-form` + `zod` (`src/lib/validations/clients.ts`), Typen in `src/lib/clients/types.ts`.
@@ -111,6 +112,7 @@
 | Datenzugriff aufgeteilt in `queries.ts` (reine Lesefunktionen für Server Components) und `actions.ts` (Server Actions für Mutationen) | Seiten bleiben async Server Components, die Daten laden und als Props durchreichen; Client-Komponenten bleiben interaktiv, rufen aber nur noch Server Actions statt eines lokalen Hooks auf | 2026-08-25 |
 | Jede Server Action beginnt mit eigenem `requireAuth()`-Check (Supabase `getClaims()`) statt sich allein auf das geschützte Layout zu verlassen | Server Actions sind eigene Endpunkte, die theoretisch auch ohne Seitenaufruf erreichbar wären; explizite Prüfung ist Defense in Depth gemäß `.claude/rules/backend.md`, RLS ist die dritte, unabhängige Ebene | 2026-08-25 |
 | Duplikat-E-Mail-Prüfung per `ilike` in der Server Action (kein DB-Constraint) | Muss weich bleiben (Anlegen trotzdem möglich); ein Unique-Constraint würde das erzwingen. Der bereits angelegte funktionale Index auf `lower(contact_email)` unterstützt die Abfrage | 2026-08-25 |
+| **[BUG-1-Fix]** DELETE-RLS-Policies auf `clients`/`projects` per `ALTER POLICY` von `USING (true)` auf `USING (status = 'archived')` verschärft | QA (zweite Runde) fand, dass die Archivieren-vor-Löschen-Regel nur in der Server Action galt und per direktem Supabase-Aufruf umgehbar war; jetzt konsistent mit dem bereits bestehenden `ON DELETE RESTRICT`-Schutz auf DB-Ebene | 2026-08-25 |
 
 ---
 <!-- Sections below are added by subsequent skills -->
@@ -261,33 +263,34 @@ Beim Code-Review fiel auf, dass `createProject` (`src/lib/clients/actions.ts`) n
 - [x] Input validation / XSS: Firmenname `QA17-<img src=x onerror=alert(1)> GmbH` wird als reiner Text gerendert (kein `<img>`-Element im DOM, kein Alert ausgelöst) — React entschärft das automatisch, es wird nirgends `dangerouslySetInnerHTML` verwendet
 - [x] Shared Visibility ist beabsichtigt (Single-Tenant, siehe PROJ-1 Decision Log) und funktioniert wie vorgesehen — kein IDOR-Test anwendbar, da es kein Besitzer-Konzept gibt
 - [ ] N/A Rate limiting: für dieses CRUD-Feature nicht spezifiziert (siehe PROJ-2 Decision Log: kein zusätzliches UI-Rate-Limiting im MVP)
-- [ ] **BUG-1 (siehe unten):** "Erst archivieren, dann löschen" ist nur in der Server Action durchgesetzt, nicht in der RLS-Policy — per direktem Supabase-Aufruf (unter Umgehung der Next.js-App) umgehbar
+- [x] **BUG-1 — behoben (siehe unten):** "Erst archivieren, dann löschen" wird jetzt zusätzlich per RLS-Policy durchgesetzt, nicht mehr nur in der Server Action
 
 ### Regressionstests (zweite Runde)
 - [x] `npm test` (Vitest): 25/25 grün
 - [x] `npm run build` / `npm run lint`: fehlerfrei
 - [x] PROJ-2-Regressionssuite: 12/12 grün auf Chromium
-- [x] `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`: 3/3 grün auf Chromium UND Mobile Safari/WebKit — Suite musste angepasst werden (archiviert jetzt vor jedem Löschversuch; Dashboard-/Leerzustand-Prüfungen auf Muster statt Exaktwert umgestellt, da die Umgebung inzwischen dauerhaft echte Kunden enthält, siehe Implementierungsnotizen)
+- [x] `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`: 4/4 grün auf Chromium UND Mobile Safari/WebKit — Suite musste angepasst werden (archiviert jetzt vor jedem Löschversuch; Dashboard-/Leerzustand-Prüfungen auf Muster statt Exaktwert umgestellt, da die Umgebung inzwischen dauerhaft echte Kunden enthält, siehe Implementierungsnotizen); neuer Test für BUG-1 als permanente Regression ergänzt
 
 ### Bugs Found
 
-#### BUG-1: „Erst archivieren, dann löschen" nur in der Server Action durchgesetzt, nicht in der Datenbank
+#### BUG-1: „Erst archivieren, dann löschen" nur in der Server Action durchgesetzt, nicht in der Datenbank — **BEHOBEN**
 - **Severity:** Medium
 - **Steps to Reproduce:**
   1. Einen aktiven (nicht archivierten) Kunden anlegen
   2. Statt über die App direkt per Supabase-Client (mit einer normalen, eingeloggten Nutzer-Session, nicht Service-Role) einen `DELETE` auf `clients` mit der passenden `id` ausführen
   3. Erwartet: Wird abgelehnt, da der Kunde noch nicht archiviert ist (wie es die App über die Server Action erzwingt)
-  4. Tatsächlich: Der Löschvorgang wird von der Datenbank anstandslos ausgeführt — die RLS-DELETE-Policy lautet `USING (true)`, sie kennt die Archiviert-Bedingung nicht. Live nachgestellt (Testnutzer via Supabase-Admin-API angelegt, `signInWithPassword` + direkter `.from('clients').delete()`-Aufruf): `count: 1`, Zeile war anschließend weg.
-- **Einordnung:** Kein Sicherheitsloch im engeren Sinn — alle eingeloggten Mitarbeiter dürfen laut Shared-Visibility-Entscheidung ohnehin jeden Kunden/jedes Projekt löschen, ein Bypass verschafft also keine neuen Rechte, nur einen übersprungenen Bestätigungsschritt. Aber inkonsistent mit dem im selben Feature bereits etablierten Defense-in-Depth-Muster (die „hat noch Projekte"-Bedingung ist zusätzlich per `ON DELETE RESTRICT` auf DB-Ebene abgesichert, die „muss archiviert sein"-Bedingung aktuell nicht).
-- **Priority:** Sollte behoben werden (RLS-DELETE-Policy auf `USING (status = 'archived')` verschärfen), blockiert aber kein Deployment.
+  4. Tatsächlich (vor dem Fix): Der Löschvorgang wurde von der Datenbank anstandslos ausgeführt — die RLS-DELETE-Policy lautete `USING (true)`, sie kannte die Archiviert-Bedingung nicht. Live nachgestellt (Testnutzer via Supabase-Admin-API angelegt, `signInWithPassword` + direkter `.from('clients').delete()`-Aufruf): `count: 1`, Zeile war anschließend weg.
+- **Einordnung:** Kein Sicherheitsloch im engeren Sinn — alle eingeloggten Mitarbeiter dürfen laut Shared-Visibility-Entscheidung ohnehin jeden Kunden/jedes Projekt löschen, ein Bypass verschaffte also keine neuen Rechte, nur einen übersprungenen Bestätigungsschritt. Aber inkonsistent mit dem im selben Feature bereits etablierten Defense-in-Depth-Muster (die „hat noch Projekte"-Bedingung ist zusätzlich per `ON DELETE RESTRICT` auf DB-Ebene abgesichert).
+- **Fix:** Migration `enforce_archived_before_delete` — `ALTER POLICY` auf beiden DELETE-Policies (`clients`, `projects`) von `USING (true)` auf `USING (status = 'archived')`. Live erneut nachgestellt: derselbe Bypass-Versuch liefert jetzt `count: 0`, Zeile bleibt bestehen; nach Archivieren liefert derselbe Aufruf `count: 1`, Zeile ist weg. Als permanenter Regressionstest in `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts` ergänzt.
+- **Priority:** Behoben vor Re-Deployment.
 
 ### Summary
 - **Acceptance Criteria:** 10/10 passed
 - **Edge Cases:** 3/5 aktiv verifiziert, 2/5 per Code-Review abgedeckt (siehe oben, keine offenen Zweifel)
-- **Bugs Found:** 1 (Medium — RLS deckt die neue Lösch-Bedingung nicht ab, kein Autorisierungsproblem im Shared-Visibility-Modell)
-- **Security:** Pass mit einem Medium-Befund (Auth-Schutz, GRANT-Schutz, XSS-Schutz weiterhin bestätigt; RLS-Lücke bei der neuen Archiviert-Bedingung siehe BUG-1)
-- **Production Ready:** YES — kein Critical/High-Bug, BUG-1 blockiert laut Projekt-Konvention (siehe QA-Skill) das Deployment nicht
-- **Recommendation:** Deploy; BUG-1 zeitnah nachziehen (kleiner, risikoarmer Policy-Fix)
+- **Bugs Found:** 1 (Medium), behoben — 0 offen
+- **Security:** Pass (Auth-Schutz, GRANT-Schutz, XSS-Schutz, RLS-Lücke aus BUG-1 alle bestätigt behoben/geprüft)
+- **Production Ready:** YES
+- **Recommendation:** Deploy
 
 ## Deployment
 

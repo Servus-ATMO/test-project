@@ -72,6 +72,51 @@ test('anon Supabase key cannot read or write clients/projects directly (no GRANT
   expect(writeError?.code).toBe('42501')
 })
 
+test('an authenticated user cannot delete a client/project directly unless it is archived (RLS, regression for BUG-1)', async () => {
+  // BUG-1 aus der zweiten /qa-Runde: "erst archivieren, dann loeschen" war
+  // anfangs nur in der Server Action durchgesetzt, nicht in der RLS-Policy -
+  // per direktem Supabase-Aufruf (mit einer normalen Nutzer-Session, unter
+  // Umgehung der Server Action) umgehbar. Migration "enforce_archived_before_delete"
+  // hat die DELETE-Policies entsprechend verschaerft.
+  const admin = adminClient()
+  const { data: client, error: insertError } = await admin
+    .from('clients')
+    .insert({ company_name: 'QA17-RLS-Delete-Regression', contact_email: 'rls-delete@example.com' })
+    .select('id')
+    .single()
+  if (insertError || !client) throw insertError
+
+  const asUser = anonClient()
+  const { error: signInError } = await asUser.auth.signInWithPassword({
+    email: EMAIL,
+    password: PASSWORD,
+  })
+  if (signInError) throw signInError
+
+  // Noch aktiv -> RLS liefert 0 betroffene Zeilen statt eines Fehlers, die
+  // Zeile bleibt bestehen.
+  const { count: activeDeleteCount } = await asUser
+    .from('clients')
+    .delete({ count: 'exact' })
+    .eq('id', client.id)
+  expect(activeDeleteCount).toBe(0)
+
+  const { data: stillActive } = await admin
+    .from('clients')
+    .select('id')
+    .eq('id', client.id)
+    .maybeSingle()
+  expect(stillActive).not.toBeNull()
+
+  // Archiviert -> derselbe Aufruf darf jetzt durchgehen.
+  await admin.from('clients').update({ status: 'archived' }).eq('id', client.id)
+  const { count: archivedDeleteCount } = await asUser
+    .from('clients')
+    .delete({ count: 'exact' })
+    .eq('id', client.id)
+  expect(archivedDeleteCount).toBe(1)
+})
+
 test('PROJ-17 full flow: CRUD, duplicate warning, delete-guard, archive, dashboard, search, XSS, mobile', async ({
   page,
 }) => {
