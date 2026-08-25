@@ -33,6 +33,15 @@ interface ClientDetailViewProps {
 export function ClientDetailView({ client, projects }: ClientDetailViewProps) {
   const router = useRouter()
 
+  // Spiegelt die serverseitige Pruefung in deleteProject() - erst
+  // archivieren, dann loeschen (PROJ-17-Refine 2026-08-25).
+  const getProjectDeleteBlockReason = (project: Project): string | null => {
+    if (project.status !== 'archived') {
+      return 'Muss zuerst archiviert werden, bevor es endgültig gelöscht werden kann.'
+    }
+    return null
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -147,21 +156,30 @@ export function ClientDetailView({ client, projects }: ClientDetailViewProps) {
                       >
                         {project.status === 'active' ? 'Archivieren' : 'Reaktivieren'}
                       </DropdownMenuItem>
-                      <DeleteAlertDialog
-                        entityLabel={project.name}
-                        onConfirm={async () => {
-                          await deleteProject(project.id, client.id)
-                          router.refresh()
-                        }}
-                        trigger={
-                          <DropdownMenuItem
-                            onSelect={(e) => e.preventDefault()}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            Endgültig löschen
-                          </DropdownMenuItem>
-                        }
-                      />
+                      {getProjectDeleteBlockReason(project) === null ? (
+                        <DeleteAlertDialog
+                          entityLabel={project.name}
+                          onConfirm={async () => {
+                            await deleteProject(project.id, client.id)
+                            router.refresh()
+                          }}
+                          trigger={
+                            <DropdownMenuItem
+                              onSelect={(e) => e.preventDefault()}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              Endgültig löschen
+                            </DropdownMenuItem>
+                          }
+                        />
+                      ) : (
+                        <DropdownMenuItem
+                          disabled
+                          title={getProjectDeleteBlockReason(project) ?? undefined}
+                        >
+                          Endgültig löschen
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

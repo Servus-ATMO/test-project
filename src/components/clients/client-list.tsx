@@ -50,7 +50,18 @@ export function ClientList({ clients, projects }: ClientListProps) {
   }, [clients, search, showArchived])
 
   const projectCount = (clientId: string) => projects.filter((p) => p.clientId === clientId).length
-  const canDeleteClient = (clientId: string) => projectCount(clientId) === 0
+
+  // Spiegelt die serverseitige Pruefung in deleteClient() - erst archivieren,
+  // dann loeschen (PROJ-17-Refine 2026-08-25), danach erst die Projekt-Anzahl.
+  const getDeleteBlockReason = (client: Client): string | null => {
+    if (client.status !== 'archived') {
+      return 'Muss zuerst archiviert werden, bevor er endgültig gelöscht werden kann.'
+    }
+    if (projectCount(client.id) > 0) {
+      return 'Kann nicht gelöscht werden, solange der Kunde noch Projekte hat.'
+    }
+    return null
+  }
 
   if (clients.length === 0) {
     return (
@@ -148,7 +159,7 @@ export function ClientList({ clients, projects }: ClientListProps) {
                       >
                         {client.status === 'active' ? 'Archivieren' : 'Reaktivieren'}
                       </DropdownMenuItem>
-                      {canDeleteClient(client.id) ? (
+                      {getDeleteBlockReason(client) === null ? (
                         <DeleteAlertDialog
                           entityLabel={client.companyName}
                           onConfirm={async () => {
@@ -165,10 +176,7 @@ export function ClientList({ clients, projects }: ClientListProps) {
                           }
                         />
                       ) : (
-                        <DropdownMenuItem
-                          disabled
-                          title="Kann nicht gelöscht werden, solange der Kunde noch Projekte hat."
-                        >
+                        <DropdownMenuItem disabled title={getDeleteBlockReason(client) ?? undefined}>
                           Endgültig löschen
                         </DropdownMenuItem>
                       )}

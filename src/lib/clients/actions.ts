@@ -122,6 +122,25 @@ export async function setClientStatus(id: string, status: EntityStatus): Promise
 export async function deleteClient(id: string): Promise<DeleteResult> {
   const supabase = await requireAuth()
 
+  // Sicherheitsbremse aus dem PROJ-17-Refine (2026-08-25): endgueltiges
+  // Loeschen setzt voraus, dass der Kunde bereits archiviert ist - erzwingt
+  // einen bewussten Zwischenschritt statt direktem Loeschen aus dem aktiven
+  // Zustand. Serverseitig geprueft, auch wenn die UI die Option bereits
+  // deaktiviert (Defense in Depth, gleiches Muster wie die Projekt-Zaehlung
+  // unten).
+  const { data: client } = await supabase
+    .from('clients')
+    .select('status')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (client?.status !== 'archived') {
+    return {
+      ok: false,
+      reason: 'Der Kunde muss zuerst archiviert werden, bevor er endgültig gelöscht werden kann.',
+    }
+  }
+
   const { count } = await supabase
     .from('projects')
     .select('id', { count: 'exact', head: true })
@@ -130,7 +149,7 @@ export async function deleteClient(id: string): Promise<DeleteResult> {
   if ((count ?? 0) > 0) {
     return {
       ok: false,
-      reason: `Dieser Kunde hat noch ${count} Projekt(e) — endgültiges Löschen ist erst möglich, wenn keine Projekte mehr vorhanden sind. Alternativ kann der Kunde archiviert werden.`,
+      reason: `Dieser Kunde hat noch ${count} Projekt(e) — endgültiges Löschen ist erst möglich, wenn keine Projekte mehr vorhanden sind.`,
     }
   }
 
@@ -206,12 +225,28 @@ export async function setProjectStatus(
   revalidatePath('/dashboard')
 }
 
-// Aktuell nie blockiert - siehe PROJ-17 Tech Design "Lösch-Schutzprüfung":
-// es gibt noch keine abhaengigen Tabellen (Interview-Importe -> PROJ-3,
-// Zugriffslinks -> PROJ-10). Eigene Funktion, damit spaetere Features hier
-// einfach eine Bedingung ergaenzen koennen.
+// Abhaengige-Daten-Pruefung aktuell nie blockierend - siehe PROJ-17 Tech
+// Design "Lösch-Schutzprüfung": es gibt noch keine abhaengigen Tabellen
+// (Interview-Importe -> PROJ-3, Zugriffslinks -> PROJ-10). Eigene Funktion,
+// damit spaetere Features hier einfach eine weitere Bedingung ergaenzen
+// koennen. Die Archiviert-Bedingung aus dem PROJ-17-Refine (2026-08-25) gilt
+// unabhaengig davon bereits jetzt.
 export async function deleteProject(id: string, clientId: string): Promise<DeleteResult> {
   const supabase = await requireAuth()
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('status')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (project?.status !== 'archived') {
+    return {
+      ok: false,
+      reason: 'Das Projekt muss zuerst archiviert werden, bevor es endgültig gelöscht werden kann.',
+    }
+  }
+
   const { error } = await supabase.from('projects').delete().eq('id', id)
   if (error) {
     return { ok: false, reason: 'Das Projekt konnte nicht gelöscht werden.' }
