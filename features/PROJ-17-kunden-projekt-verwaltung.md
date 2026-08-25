@@ -1,8 +1,8 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: Planned
+## Status: Architected
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25
+**Last Updated:** 2026-08-25 (Architektur)
 
 ## Dependencies
 - Requires: PROJ-2 (Agentur-Login) — Auth, geschütztes Layout, Dashboard-Platzhalter
@@ -51,7 +51,7 @@
 - Zugriff: Alle eingeloggten Mitarbeiter sehen und bearbeiten alle Kunden/Projekte (Shared Visibility, keine Owner-Einschränkung — siehe PROJ-1 Decision Log)
 
 ## Open Questions
-- [ ] Genaue technische Bedingung für "abhängige Daten", die hartes Löschen verhindern (z. B. vorhandene `interview_imports`- oder `client_access_links`-Einträge) — wird bei `/architecture` konkretisiert; die referenzierten Features (PROJ-3, PROJ-10) existieren zum jetzigen Zeitpunkt noch nicht
+- [x] ~~Genaue technische Bedingung für "abhängige Daten", die hartes Löschen verhindern~~ — bei `/architecture` konkretisiert, siehe Tech Design Abschnitt "Lösch-Schutzprüfung"
 - [ ] Realtime-Presence-Hinweis bei gleichzeitiger Bearbeitung — bewusst zurückgestellt (siehe Out of Scope), evtl. spätere Erweiterung falls in der Praxis relevant
 
 ## Decision Log
@@ -75,13 +75,94 @@
 <!-- Added by /architecture -->
 | Decision | Rationale | Date |
 |----------|-----------|------|
-| _Example: localStorage over Supabase_ | _No user accounts needed; data is device-local_ | YYYY-MM-DD |
+| Zwei neue Supabase-Tabellen `clients` + `projects` (Postgres, nicht localStorage) | Daten müssen für alle eingeloggten Mitarbeiter geräteübergreifend sichtbar sein (Shared Visibility, siehe PROJ-1); Tabellennamen folgen dem in PROJ-1 bereits skizzierten Schema-Entwurf | 2026-08-25 |
+| RLS + explizite GRANTs für `authenticated` (SELECT/INSERT/UPDATE/DELETE), kein Grant für `anon` | Gleiches Muster wie `profiles` aus PROJ-1; PROJ-1s QA hat gezeigt, dass Supabase GRANTs nicht automatisch vergibt (BUG-1) — hier von Anfang an explizit gesetzt statt erst in der QA nachzubessern | 2026-08-25 |
+| Kein Owner-Feld auf `clients`/`projects` (keine RLS-Einschränkung nach Ersteller) | Deckt sich mit der Single-Tenant-/Shared-Visibility-Entscheidung aus PROJ-1 — alle Mitarbeiter sehen und bearbeiten alle Datensätze | 2026-08-25 |
+| Server Actions statt eigener API-Routen für alle Schreiboperationen (Kunde/Projekt anlegen, bearbeiten, archivieren, löschen) | Konsistent mit dem in PROJ-2 etablierten Muster (`src/lib/auth/actions.ts`); Datenlisten (Übersicht, Dashboard-Widget) werden per Server Component direkt gelesen | 2026-08-25 |
+| Kunde-Anlegen erzeugt serverseitig automatisch ein erstes Projekt (Default-Name = Firmenname, sofort umbenennbar) | Setzt die Vorgabe "Kunde anlegen → automatisch ins erste Projekt springen" technisch um, ohne dass der Nutzer einen zweiten Schritt braucht | 2026-08-25 |
+| Duplikat-E-Mail-Warnung als serverseitige Prüfung vor dem eigentlichen Insert (nicht als DB-Constraint) | Muss weich bleiben (Anlegen trotzdem möglich) — ein DB-Constraint würde das erzwingen; die Prüfung liest zuerst vorhandene Kunden mit gleicher E-Mail, das UI entscheidet dann über Warnung vs. direktes Anlegen | 2026-08-25 |
+| Lösch-Schutzprüfung als eigenständige, erweiterbare Funktion statt fest verdrahteter Bedingung | Siehe Tech-Design-Abschnitt "Lösch-Schutzprüfung" — löst die bisher offene Frage zur genauen Bedingung für "abhängige Daten" | 2026-08-25 |
+| Suche client-seitig (im Browser) über die bereits geladene Kundenliste, kein serverseitiger Such-Endpoint | Für die realistische Kundenzahl eines Solo-/Kleinteam-Tools ausreichend performant, spart einen zusätzlichen Request-Roundtrip pro Tastenanschlag | 2026-08-25 |
+| Routing: `/kunden` (Übersicht), `/kunden/[kundeId]` (Projekt-Liste eines Kunden), `/kunden/[kundeId]/[projektId]` (Projekt-Detail/Platzhalter) | Bildet die 1:viele-Beziehung direkt in der URL-Struktur ab, `/kunden/[kundeId]/[projektId]` ist bereits der spätere Einstiegspunkt für PROJ-3 ff. | 2026-08-25 |
+| Keine neuen npm-Pakete nötig | `react-hook-form`, `zod`, alle benötigten shadcn/ui-Komponenten (Table, Dialog, AlertDialog, DropdownMenu, Badge, Input) sind bereits aus PROJ-1/PROJ-2 vorhanden | 2026-08-25 |
 
 ---
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### A) Komponenten-Struktur (visueller Baum)
+
+```
+/kunden (Kunden-Übersicht — ersetzt keine bestehende Seite, neue Route)
+├── Suchfeld (Textsuche über Firmenname/Ansprechpartner-Name)
+├── "Archiviert anzeigen"-Umschalter
+├── "Neuer Kunde"-Button → öffnet Kunde-Anlegen-Dialog
+├── Kunden-Liste (Tabelle: Firmenname, Ansprechpartner, Anzahl Projekte, Status)
+│   ├── Kunden-Zeile → Klick öffnet Kunden-Detail
+│   │   └── Aktionen-Menü (Bearbeiten, Archivieren/Reaktivieren, Endgültig löschen)
+│   └── Leerzustand ("Noch keine Kunden angelegt" + "Ersten Kunden anlegen"-Button)
+└── Kunde-Anlegen/Bearbeiten-Dialog
+    ├── Formularfelder: Firmenname*, Ansprechpartner-Name, Ansprechpartner-E-Mail*, Notizen
+    └── Weiche Duplikat-Warnung (erscheint erst nach Absenden, falls E-Mail bereits existiert)
+
+/kunden/[kundeId] (Kunden-Detail — Projekt-Liste dieses Kunden)
+├── Kunden-Stammdaten-Karte (Bearbeiten-Button)
+├── "Neues Projekt"-Button → öffnet Projekt-Anlegen-Dialog
+├── Projekt-Liste (Tabelle: Projektname, Status)
+│   ├── Projekt-Zeile → Klick öffnet Projekt-Detail
+│   │   └── Aktionen-Menü (Bearbeiten, Archivieren/Reaktivieren, Endgültig löschen)
+│   └── Leerzustand ("Noch keine Projekte" + "Erstes Projekt anlegen"-Button)
+└── Lösch-Bestätigungsdialog (gemeinsam genutzt für Kunde + Projekt; zeigt "Endgültig löschen"
+    nur an, wenn die Lösch-Schutzprüfung grün ist — siehe unten)
+
+/kunden/[kundeId]/[projektId] (Projekt-Detail)
+└── Projekt-Stammdaten + Platzhalter-Hinweis ("Interview-Import folgt in PROJ-3") —
+    dieser Platzhalter wird durch PROJ-3 ff. ersetzt, die Route selbst bleibt bestehen
+
+Dashboard-Widget (auf bestehender /dashboard-Seite, ergänzt den bisherigen Platzhalter)
+├── Kennzahlen-Karte ("X Kunden, Y aktive Projekte")
+├── Liste der 3–5 zuletzt bearbeiteten Kunden/Projekte
+├── Leerzustand (reduzierte Variante: "Noch keine Kunden – Kunden anlegen →")
+└── Link "Alle Kunden ansehen" → /kunden
+```
+
+### B) Datenmodell (in einfacher Sprache)
+
+**Kunde (Tabelle `clients`)**
+- Eindeutige ID
+- Firmenname (Pflicht)
+- Ansprechpartner-Name (optional)
+- Ansprechpartner-E-Mail (Pflicht)
+- Notizen (optional, Freitext)
+- Status: Aktiv oder Archiviert
+- Angelegt-Zeitstempel, Zuletzt-bearbeitet-Zeitstempel (steuert die "zuletzt bearbeitet"-Sortierung im Dashboard-Widget)
+
+**Projekt (Tabelle `projects`)**
+- Eindeutige ID
+- Verknüpfung zum zugehörigen Kunden (Pflicht)
+- Projektname (Pflicht)
+- Status: Aktiv oder Archiviert
+- Notizen (optional, Freitext)
+- Angelegt-Zeitstempel, Zuletzt-bearbeitet-Zeitstempel
+
+Gespeichert in: Supabase (PostgreSQL) — wie alle bisherigen Daten des Tools. Sichtbarkeit: alle eingeloggten Agentur-Mitarbeiter sehen und bearbeiten alle Kunden/Projekte (kein Besitzer-Konzept, siehe PROJ-1 Single-Tenant-Entscheidung).
+
+**Lösch-Schutzprüfung** (löst die bisherige offene Frage aus dem Spec-Interview): Bevor "Endgültig löschen" angeboten wird, prüft das System, ob abhängige Daten existieren:
+- Bei einem **Kunden**: blockiert, sobald der Kunde mindestens ein Projekt hat (unabhängig vom Projekt-Status) — der Kunde muss zuerst all seine Projekte losgeworden sein.
+- Bei einem **Projekt**: aktuell blockiert diese Prüfung nichts, da die Tabellen mit "echten Inhalten" (Interview-Importe aus PROJ-3, Zugriffslinks aus PROJ-10) noch nicht existieren. Die Prüfung ist bewusst als eigenständiger, erweiterbarer Baustein angelegt — sobald PROJ-3/PROJ-10 gebaut werden, wird dort einfach eine weitere Bedingung ergänzt, ohne den Lösch-Ablauf selbst neu zu entwerfen.
+
+### C) Tech-Entscheidungen (Begründung)
+
+- **Supabase statt localStorage:** Die Daten müssen für alle Mitarbeiter (nicht nur ein Gerät) sichtbar sein — localStorage scheidet damit aus, das Tool nutzt ohnehin bereits Supabase seit PROJ-1.
+- **Server Actions statt eigener API-Routen:** Für Formulare (Anlegen/Bearbeiten/Archivieren/Löschen) wird das gleiche Muster wie beim Login (PROJ-2) verwendet — spart eine parallele API-Schicht, Listen werden direkt serverseitig gelesen.
+- **Automatisches erstes Projekt beim Kunden-Anlegen:** Erspart dem Nutzer einen zweiten manuellen Schritt und setzt die im Interview festgelegte "Kunde anlegen → direkt ins erste Projekt springen"-Erwartung um.
+- **Client-seitige Suche:** Bei der zu erwartenden Kundenanzahl eines kleinen Agentur-Teams reicht es, die geladene Liste im Browser zu filtern — kein zusätzlicher Server-Roundtrip pro Tastendruck nötig.
+- **Erweiterbare Lösch-Schutzprüfung:** Verhindert, dass spätere Features (PROJ-3, PROJ-10) eine Neu-Konzeption des Lösch-Ablaufs erzwingen — sie müssen nur ihre eigene Bedingung ergänzen.
+
+### D) Abhängigkeiten (Pakete)
+
+Keine neuen npm-Pakete nötig — alle benötigten Bausteine (`react-hook-form`, `zod`, `@hookform/resolvers`, shadcn/ui `Table`/`Dialog`/`AlertDialog`/`DropdownMenu`/`Badge`/`Input`, `@supabase/ssr`) sind bereits aus PROJ-1/PROJ-2 im Projekt vorhanden.
 
 ## QA Test Results
 _To be added by /qa_
