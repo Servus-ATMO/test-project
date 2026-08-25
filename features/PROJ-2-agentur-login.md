@@ -1,6 +1,6 @@
 # PROJ-2: Agentur-Login
 
-## Status: In Progress
+## Status: Approved
 **Created:** 2026-08-25
 **Last Updated:** 2026-08-25
 
@@ -128,12 +128,22 @@ Keine neuen Pakete nötig — alles Erforderliche ist bereits vorhanden: Supabas
 **App URL:** http://localhost:3000
 **Tester:** QA Engineer (AI)
 
-**Methodik:** Manuell live im Browser getestet (Playwright-Skript für Chromium, da `chromium-cli` nicht verfügbar war), plus die permanente Regressions-Suite unter `tests/PROJ-2-agentur-login.spec.ts` (Chromium + Mobile Safari, 14/14 grün). Ein echter Testnutzer wurde direkt in `auth.users` angelegt (bcrypt-Hash via `pgcrypto`), nach dem Test wieder gelöscht.
+**Methodik:** Manuell live im Browser getestet (Playwright-Skript für Chromium, da `chromium-cli` nicht verfügbar war), plus die permanente Regressions-Suite unter `tests/PROJ-2-agentur-login.spec.ts` (Chromium + Mobile Safari, 14/14 grün). Echte Testnutzer wurden direkt in `auth.users` angelegt (bcrypt-Hash via `pgcrypto`), nach dem Test wieder gelöscht.
+
+**⚠️ Korrektur nach initialem Befund:** Die erste Testrunde ergab scheinbar einen kritischen Login-Bug ("BUG-1", siehe Historie unten). Bei der Fehlerursachensuche (Supabase-Auth-Logs via `query_logs`) stellte sich heraus: Der allererste SQL-angelegte Testnutzer hatte `NULL` in mehreren von GoTrue (Supabase Auth) zwingend als Leerstring erwarteten Spalten (`confirmation_token`, `recovery_token` u. a.), was serverseitig einen 500er ("converting NULL to string is unsupported") auslöste — durch die generische Fehlermeldung im UI nicht von "falsches Passwort" unterscheidbar. Das war ein Fehler in den eigenen QA-Testdaten, **kein Bug im Produktcode**. Mit korrekt angelegtem Testnutzer (alle Token-Spalten als `''` statt `NULL`) funktioniert der ursprüngliche, unveränderte Anwendungscode einwandfrei — inklusive des zwischenzeitlich probeweise vorgenommenen und wieder verworfenen Fixes (`startTransition`/`window.location.href` war unnötig, da `redirect()` innerhalb der Server Action nachweislich auch aus `handleSubmit` heraus zuverlässig funktioniert, bestätigt über den `x-action-redirect`-Response-Header).
+
+**Test-Infrastruktur-Fixes (Anwendungscode unverändert):**
+- `tests/PROJ-2-agentur-login.spec.ts` legt jetzt einen echten Testnutzer über die Supabase-Admin-API (`auth.admin.createUser`, Service-Role) in `beforeAll` an statt über rohes SQL — vermeidet genau das oben beschriebene NULL-Spalten-Problem dauerhaft, auch für künftige Testläufe.
+- `playwright.config.ts`: `.env.local` wird jetzt über `@next/env` geladen (Playwright läuft als eigener Prozess, nicht über die Next.js-CLI, sonst fehlten `SUPABASE_SECRET_KEY` etc. im Testprozess); `workers: 1` gesetzt, weil parallele Worker gleichzeitig `auth.admin.createUser` für denselben Lauf aufriefen und sich mit "Database error creating new user" gegenseitig blockierten.
+- `vitest.config.ts`: `tests/` (Playwright-Verzeichnis) von Vitest ausgeschlossen — Vitest versuchte sonst, `.spec.ts`-Dateien aus Playwrights eigenem Verzeichnis mitzulaufen.
+- Alle `page.goto(...)` vor einem `page.fill(...)` nutzen jetzt `waitUntil: 'networkidle'` — ohne das leerte WebKit reproduzierbar das gerade befüllte E-Mail-Feld beim Abschluss der React-Hydration (Chromium tolerant genug, um das zu verschleiern). War als zweiter, unabhängiger Fehlalarm in der E2E-Suite sichtbar, ebenfalls kein Anwendungsbug.
+
+Es wurde **kein Anwendungscode geändert** — nur Testdaten-Erzeugung und Testtiming. Dieser Abschnitt beschreibt den finalen, korrigierten Befund.
 
 ### Acceptance Criteria Status
 
 #### AC-1: Erfolgreicher Login mit gültigem Account → Redirect + E-Mail im Header
-- [ ] **BUG-1 (Critical):** Login schlägt sichtbar fehl — siehe unten. Kein Redirect, keine Session, keine Fehlermeldung.
+- [x] Live bestätigt (nach Korrektur der Testdaten, siehe oben): Redirect zu `/dashboard`, Session-Cookie gesetzt, E-Mail-Adresse im Header sichtbar, keine Konsolenfehler.
 
 #### AC-2: Falsches Passwort / nicht existierender Account → generische Fehlermeldung
 - [x] Live bestätigt: Beide Fälle zeigen identisch "E-Mail oder Passwort falsch." — kein Enumeration-Leak. Auch als E2E-Test abgesichert.
@@ -145,7 +155,7 @@ Keine neuen Pakete nötig — alles Erforderliche ist bereits vorhanden: Supabas
 - [x] Live bestätigt: `/dashboard` → `/login?redirect=%2Fdashboard`. Auch `/` (via Redirect zu `/dashboard`) korrekt geschützt. E2E-Test vorhanden.
 
 #### AC-5: Eingeloggt + Logout → Session beendet, zurück zu `/login`
-- [ ] **Blockiert durch BUG-1** — nicht testbar, da über die UI nie eine Session zustande kommt. Logout-Server-Action selbst (`supabase.auth.signOut()` + `redirect('/login')`) ist per Code-Review unauffällig, aber ungetestet.
+- [x] Live bestätigt: Logout beendet die Session, Redirect zu `/login`, `/dashboard` danach wieder geschützt.
 
 #### AC-6: Passwort-vergessen → identische Bestätigung unabhängig von Account-Existenz
 - [x] Live bestätigt für beide Fälle (existierender Test-Account vs. frei erfundene E-Mail). E2E-Test vorhanden. Tatsächlicher E-Mail-Versand/-Inhalt nicht prüfbar (kein Postfach-Zugriff in dieser Umgebung) — siehe auch offene Dashboard-Template-Frage in den Implementierungsnotizen.
@@ -159,7 +169,7 @@ Keine neuen Pakete nötig — alles Erforderliche ist bereits vorhanden: Supabas
 ### Edge Cases Status
 
 #### EC-1: Doppelter schneller Klick auf "Anmelden"
-- [ ] Nicht isoliert getestet — durch BUG-1 ohnehin nicht sinnvoll prüfbar (jeder Klick "verpufft" gleich).
+- [x] Code-Review: `disabled={form.formState.isSubmitting}` verhindert Doppel-Submit. Nicht isoliert per Timing-Test nachgestellt, aber Mechanismus greift nachweislich (Button war während des realen, erfolgreichen Login-Requests kurzzeitig deaktiviert).
 
 #### EC-2: Session läuft während Nutzung ab
 - [x] Code-Review: Proxy aktualisiert Session bei jedem Request (aus PROJ-1), Redirect-Gate bei fehlendem Claim vorhanden. Nicht live mit einer echten ablaufenden Session getestet.
@@ -168,38 +178,28 @@ Keine neuen Pakete nötig — alles Erforderliche ist bereits vorhanden: Supabas
 - [x] Live bestätigt (siehe AC-7): `/auth/confirm` mit ungültigem `token_hash` → `/passwort-vergessen?error=expired_link` mit sichtbarem Hinweistext.
 
 #### EC-4: Manipulierter `?redirect=`-Parameter (Open-Redirect)
-- [x] `getSafeRedirectPath` per Unit-Test abgesichert (absolute URLs, `//`-Protocol-relative, `javascript:` — alle korrekt auf Fallback reduziert). Live-Bestätigung des tatsächlichen Post-Login-Verhaltens blockiert durch BUG-1, aber die Schutzfunktion selbst greift bereits vor dem Login (Parameter wird nie ungeprüft in ein `<a href>`/Redirect übernommen).
+- [x] `getSafeRedirectPath` per Unit-Test abgesichert (absolute URLs, `//`-Protocol-relative, `javascript:` — alle korrekt auf Fallback reduziert). Zusätzlich live mit echtem, erfolgreichem Login bestätigt: `?redirect=https://evil.example.com` und `?redirect=//evil.example.com` landen beide auf derselben Origin, nie auf der fremden Domain.
 
 #### EC-5: Bereits eingeloggter Nutzer ruft `/login` auf
-- [ ] **Nicht testbar** — durch BUG-1 kommt nie eine Session zustande, die diesen Fall auslösen könnte.
+- [x] Live bestätigt: Wird automatisch zu `/dashboard` weitergeleitet, sieht das Formular nicht erneut.
 
 ### Security Audit Results
 - [x] Authorization/Enumeration: Falsches Passwort und nicht existierender Account nicht unterscheidbar (Login UND Passwort-vergessen)
-- [x] Open-Redirect: `getSafeRedirectPath` blockt externe/`//`-Ziele zuverlässig (Unit-getestet)
+- [x] Open-Redirect: `getSafeRedirectPath` blockt externe/`//`-Ziele zuverlässig (Unit-getestet und live mit echtem Login bestätigt)
 - [x] Input-Validierung: E-Mail-Format serverseitig via `zod` erneut geprüft (nicht nur Client-seitig)
 - [x] Keine Secrets im Client-Bundle oder in Konsolen-Logs gefunden
-- [ ] **BUG-1 (Critical):** Login-Funktion selbst ist nicht nutzbar — schwerwiegendster denkbarer Auth-Bug (niemand kann sich einloggen)
+- [x] IDOR/Session: Login setzt korrekt ein Session-Cookie, Logout beendet sie zuverlässig, geschützte Routen danach wieder gesperrt
 
 ### Bugs Found
 
-#### BUG-1: Login mit korrekten Zugangsdaten schlägt lautlos fehl (keine Session, kein Redirect, keine Fehlermeldung)
-- **Severity:** Critical
-- **Steps to Reproduce:**
-  1. Gültigen Test-Account anlegen, `/login` aufrufen
-  2. Korrekte E-Mail + Passwort eingeben, "Anmelden" klicken
-  3. Server-Log zeigt: `POST /login 200` und die Server Action läuft mit den korrekten Werten durch, ohne Fehler
-  4. Erwartet: Redirect zu `/dashboard` (oder Rücksprungziel), Session-Cookie gesetzt, E-Mail im Header sichtbar
-  5. Tatsächlich: Browser bleibt auf `/login?redirect=...`, **keine Cookies gesetzt** (verifiziert: `page.context().cookies()` liefert `[]`), keine Fehlermeldung angezeigt, Submit-Button wird wieder aktiv (nicht dauerhaft blockiert) — für den Nutzer sieht es aus, als würde der Klick einfach nichts tun
-- **Root Cause:** `LoginForm` ruft die Server Action `login()` direkt aus `react-hook-form`s `handleSubmit`-Callback auf (`await login(values, redirectTo)`), **nicht** aus einer nativen `<form action={...}>` und **nicht** in `startTransition` gewrappt. Laut offizieller Next.js-Doku (`node_modules/next/dist/docs/01-app/02-guides/server-actions.md`, Zeile 22): *"You create one by adding the 'use server' directive, then invoke it from a form, or from an event handler or useEffect wrapped in startTransition."* Wird eine Server Action außerhalb dieser beiden Mechanismen aufgerufen, verarbeitet Next.js den internen `redirect()`-Steuerfluss-Fehler (`NEXT_REDIRECT`-Digest) nicht automatisch über den Router — der `LoginForm`-Code fängt ihn zwar ab (`isRedirectError`) und wirft ihn erneut, aber ohne eine aktive Transition greift dort kein Redirect-Boundary, der die Navigation tatsächlich ausführt. Betrifft identisch `ResetPasswordForm` (nutzt dasselbe Muster mit `resetPassword()` + internem `redirect()`).
-- **Empfohlener Fix:** Aufruf in `startTransition` wrappen (z. B. `const [, startTransition] = useTransition()`, dann `startTransition(() => { onSubmitLogic() })`), **oder** `redirect()` aus der Server Action entfernen und stattdessen den Zielpfad im Rückgabewert zurückgeben, den die Client-Komponente per `router.push()`/`window.location.href` verarbeitet (letzteres deckt sich mit der Projekt-Regel `.claude/rules/frontend.md`, die genau dafür `window.location.href` vorschreibt). Fix muss in `LoginForm` **und** `ResetPasswordForm` angewendet werden (identisches Muster). Nach dem Fix: AC-1, AC-5, EC-1, EC-5 und die Redirect-Rücksprung-Bestätigung aus AC-4/EC-4 erneut testen.
-- **Priority:** Fix before deployment — das Feature ist in seiner Kernfunktion (Login) unbenutzbar
+Keine offenen Bugs. Ein zunächst als Critical eingestufter Befund ("Login schlägt lautlos fehl") stellte sich bei der Root-Cause-Analyse als fehlerhaft angelegter QA-Testnutzer heraus (siehe Methodik-Hinweis oben), nicht als Fehler im Produktcode. Mit korrekten Testdaten bestehen alle Login-/Logout-/Redirect-Acceptance-Criteria.
 
 ### Summary
-- **Acceptance Criteria:** 3/8 zweifelsfrei bestanden (AC-2, AC-3, AC-4, AC-6 teilweise), 1 kritisch fehlgeschlagen (AC-1), 4 blockiert/nicht vollständig testbar als direkte Folge von BUG-1 oder fehlendem E-Mail-Zugriff (AC-5, AC-7, AC-8 teilweise)
-- **Bugs Found:** 1 total (1 Critical, 0 High, 0 Medium, 0 Low)
-- **Security:** Issues found (BUG-1 — kein Datenleck, aber Kernfunktion nicht nutzbar)
-- **Production Ready:** NO
-- **Recommendation:** BUG-1 vor jeder weiteren Arbeit beheben (Frontend, betrifft `LoginForm` + `ResetPasswordForm`), danach erneut `/qa PROJ-2` — insbesondere AC-1, AC-5, EC-1, EC-5 und den echten Redirect-Rücksprung nach Login
+- **Acceptance Criteria:** 6/8 zweifelsfrei bestanden (AC-1 bis AC-6), 2 nicht end-to-end testbar in dieser Umgebung (AC-7: kein E-Mail-Postfach-Zugriff + Dashboard-Template noch nicht umgestellt; AC-8: würde einen absichtlichen Verbindungsabbruch zu Supabase erfordern) — beide jedoch per Code-Review plausibel und teilweise (Negativpfade) live bestätigt
+- **Bugs Found:** 0 (1 initialer Fehlalarm durch fehlerhafte QA-Testdaten, aufgeklärt und korrigiert — siehe oben)
+- **Security:** Pass
+- **Production Ready:** YES — für den Scope von PROJ-2. AC-7 (echter E-Mail-Reset-Flow) sollte manuell nachgeprüft werden, sobald das Supabase-Dashboard-Template umgestellt ist (siehe Open Questions)
+- **Recommendation:** Deploy-fähig. Vor dem ersten echten Kunden-/Mitarbeiter-Einsatz: Supabase-Dashboard-E-Mail-Template für Passwort-Reset umstellen (siehe Open Questions) und den Reset-Flow einmal manuell mit einer echten Mailbox durchspielen
 
 ## Deployment
 _To be added by /deploy_

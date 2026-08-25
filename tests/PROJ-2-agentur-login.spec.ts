@@ -1,12 +1,51 @@
 import { test, expect } from '@playwright/test'
+import { createClient } from '@supabase/supabase-js'
 
-// PROJ-2 Agentur-Login. Note: does NOT include a "successful login" test —
-// that acceptance criterion currently FAILS in manual QA (BUG-1: correct
-// credentials do not establish a session because the Server Action is
-// invoked outside a React transition). See QA Test Results in
-// features/PROJ-2-agentur-login.md. Re-add that test once BUG-1 is fixed.
+// PROJ-2 Agentur-Login. A dedicated test user is created via the Supabase
+// Admin API (service role) in beforeAll and removed in afterAll - this
+// avoids hand-crafting auth.users rows via SQL, which skips columns GoTrue
+// expects to be '' rather than NULL and produces misleading 500s (see QA
+// Test Results in features/PROJ-2-agentur-login.md for how that bit us once).
+const TEST_EMAIL = `e2e-proj2-${Date.now()}@example.com`
+const TEST_PASSWORD = 'TestPasswort123!'
+
+function adminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const secretKey = process.env.SUPABASE_SECRET_KEY
+  if (!url || !secretKey) {
+    throw new Error(
+      'NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SECRET_KEY missing - required to seed the e2e test user.'
+    )
+  }
+  return createClient(url, secretKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+let testUserId: string | undefined
+
+test.beforeAll(async () => {
+  const supabase = adminClient()
+  const { data, error } = await supabase.auth.admin.createUser({
+    email: TEST_EMAIL,
+    password: TEST_PASSWORD,
+    email_confirm: true,
+  })
+  if (error) throw error
+  testUserId = data.user.id
+})
+
+test.afterAll(async () => {
+  if (!testUserId) return
+  const supabase = adminClient()
+  await supabase.auth.admin.deleteUser(testUserId)
+})
 
 test.describe('PROJ-2: Agentur-Login', () => {
+  // Serial statt parallel: alle Tests teilen sich denselben, in beforeAll
+  // angelegten Supabase-Testnutzer. Parallele Worker riefen sonst gleichzeitig
+  // beforeAll bzw. signInWithPassword fuer denselben Account auf und liefen
+  // sich gegenseitig in Supabase Auths Rate-Limiting/DB-Verbindungslimits.
+  test.describe.configure({ mode: 'serial' })
+
   test('unauthenticated visit to a protected route redirects to /login with a redirect param', async ({
     page,
   }) => {
@@ -25,23 +64,69 @@ test.describe('PROJ-2: Agentur-Login', () => {
   test('wrong password and a nonexistent email show the identical generic error', async ({
     page,
   }) => {
-    await page.goto('/login')
-    await page.fill('input[name="email"]', 'qa-proj2-user@example.com')
+    // networkidle statt des Playwright-Defaults 'load': fill() wartet nur auf
+    // Sichtbarkeit/Aktivierbarkeit des Elements, nicht auf abgeschlossene
+    // React-Hydration - ohne diese Wartezeit hat WebKit reproduzierbar das
+    // gerade getippte E-Mail-Feld beim Hydrieren wieder geleert.
+    await page.goto('/login', { waitUntil: 'networkidle' })
+    await page.fill('input[name="email"]', TEST_EMAIL)
     await page.fill('input[name="password"]', 'definitely-wrong')
     await page.click('button[type="submit"]')
     await expect(page.getByText('E-Mail oder Passwort falsch.')).toBeVisible()
 
-    await page.goto('/login')
+    await page.goto('/login', { waitUntil: 'networkidle' })
     await page.fill('input[name="email"]', 'nobody-such-account@example.com')
     await page.fill('input[name="password"]', 'whatever123')
     await page.click('button[type="submit"]')
     await expect(page.getByText('E-Mail oder Passwort falsch.')).toBeVisible()
   })
 
+  test('correct credentials log the user in, preserve the redirect target, and show their email', async ({
+    page,
+  }) => {
+    await page.goto('/login?redirect=%2Fdashboard', { waitUntil: 'networkidle' })
+    await page.fill('input[name="email"]', TEST_EMAIL)
+    await page.fill('input[name="password"]', TEST_PASSWORD)
+    await page.click('button[type="submit"]')
+    await expect(page).toHaveURL('/dashboard')
+    await expect(page.locator('header')).toContainText(TEST_EMAIL)
+  })
+
+  test('a malicious absolute redirect param is ignored even on a real successful login', async ({
+    page,
+  }) => {
+    await page.goto('/login?redirect=https%3A%2F%2Fevil.example.com', { waitUntil: 'networkidle' })
+    await page.fill('input[name="email"]', TEST_EMAIL)
+    await page.fill('input[name="password"]', TEST_PASSWORD)
+    await page.click('button[type="submit"]')
+    await expect(page).not.toHaveURL(/evil\.example\.com/)
+    await expect(page.url()).toContain('localhost')
+  })
+
+  test('already-logged-in user visiting /login is bounced away, and logout ends the session', async ({
+    page,
+  }) => {
+    await page.goto('/login', { waitUntil: 'networkidle' })
+    await page.fill('input[name="email"]', TEST_EMAIL)
+    await page.fill('input[name="password"]', TEST_PASSWORD)
+    await page.click('button[type="submit"]')
+    await expect(page).toHaveURL('/dashboard')
+
+    await page.goto('/login')
+    await expect(page).not.toHaveURL('/login')
+
+    await page.goto('/dashboard')
+    await page.click('button:has-text("Logout")')
+    await expect(page).toHaveURL('/login')
+
+    await page.goto('/dashboard')
+    await expect(page).toHaveURL(/\/login\?redirect=/)
+  })
+
   test('forgot-password shows the same confirmation regardless of whether the account exists', async ({
     page,
   }) => {
-    await page.goto('/passwort-vergessen')
+    await page.goto('/passwort-vergessen', { waitUntil: 'networkidle' })
     await page.fill('input[name="email"]', 'nobody-such-account@example.com')
     await page.click('button[type="submit"]')
     await expect(page.getByText('Falls ein Konto mit dieser E-Mail-Adresse existiert')).toBeVisible()

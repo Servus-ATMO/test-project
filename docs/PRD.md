@@ -11,7 +11,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 | Priority | Feature | Status |
 |----------|---------|--------|
 | P0 (MVP) | Supabase Infrastructure Setup | Approved ([PROJ-1](../features/PROJ-1-supabase-infrastructure-setup.md)) |
-| P0 (MVP) | Agentur-Login | Planned ([PROJ-2](../features/PROJ-2-agentur-login.md)) |
+| P0 (MVP) | Agentur-Login | Approved ([PROJ-2](../features/PROJ-2-agentur-login.md)) |
 | P0 (MVP) | Import-Werkstatt (Journey-Transkript.md + Konzept.md, Ebene 1+3 parsen) | Planned |
 | P0 (MVP) | KI-Anreicherung (Ebene 2 Profildimensionen, Kanten, Konflikterkennung, Impact-Texte) | Planned |
 | P0 (MVP) | DAG/Sankey-Graph-Visualisierung (4 Ebenen, Dossier-Panel) | Planned |
