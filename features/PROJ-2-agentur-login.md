@@ -202,4 +202,14 @@ Keine offenen Bugs. Ein zunächst als Critical eingestufter Befund ("Login schl�
 - **Recommendation:** Deploy-fähig. Vor dem ersten echten Kunden-/Mitarbeiter-Einsatz: Supabase-Dashboard-E-Mail-Template für Passwort-Reset umstellen (siehe Open Questions) und den Reset-Flow einmal manuell mit einer echten Mailbox durchspielen
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-08-25
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Vercel Project:** atmodesign/test-project
+
+Live verifiziert nach Deploy: `/` und `/dashboard` leiten unautorisiert korrekt zu `/login?redirect=...` weiter (307, kein 500 → ENV-Variablen korrekt gesetzt), `/login` und `/passwort-vergessen` rendern fehlerfrei (keine Konsolenfehler), Sicherheits-Header (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`) aktiv. Kein echter Login-Testlauf gegen Produktion (um keine Testnutzer im Produktions-Supabase-Projekt zu hinterlassen) — Login-Flow bereits in `/qa` ausführlich gegen dieselbe Supabase-Instanz verifiziert.
+
+**Offen:**
+- GitHub-Repo-Verbindung für Auto-Deploy bei Push fehlt noch (siehe PROJ-1 Deployment-Abschnitt)
+- Supabase-Dashboard-E-Mail-Template für Passwort-Reset noch nicht auf `/auth/confirm` umgestellt (siehe Open Questions) — Reset-Link aus echter E-Mail funktioniert dadurch noch nicht
+- Error-Tracking, Lighthouse-Check, Rate-Limiting — siehe `docs/production/*.md`

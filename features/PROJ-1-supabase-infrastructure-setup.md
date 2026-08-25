@@ -231,4 +231,13 @@ Keine weiteren neuen Abhängigkeiten nötig — Formulare/Validierung für das e
 - **Recommendation:** Deploy-fähig für den PROJ-1-Scope. Nächster Schritt: PROJ-2 (Login-UI), das AC-2/AC-3 erst testbar macht.
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-08-25
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Vercel Project:** atmodesign/test-project
+
+PROJ-1 liefert keine eigene UI/Route, sondern die Infrastruktur (Supabase-Client-Layer, Proxy, `profiles`-Tabelle, Storage-Buckets), die mit PROJ-2 zusammen ausgeliefert wurde. In Produktion mitverifiziert: Proxy/Auth-Gate funktioniert (kein 500 durch fehlende ENV-Variablen), Sicherheits-Header aktiv.
+
+**Offen:**
+- GitHub-Repo noch nicht mit dem Vercel-Projekt verbunden (Auto-Deploy bei Push) — Vercel-GitHub-App muss manuell für `Servus-ATMO/test-project` autorisiert werden ([github.com/apps/vercel/installations/new](https://github.com/apps/vercel/installations/new)), aktuell nur manuelle Deploys per `vercel --prod`
+- Error-Tracking (Sentry), Lighthouse-Performance-Check, DB-Query-Optimierung, Rate-Limiting — siehe `docs/production/*.md`, noch nicht eingerichtet
