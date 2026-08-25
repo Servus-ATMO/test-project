@@ -1,8 +1,8 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: In Progress
+## Status: Approved
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (Backend)
+**Last Updated:** 2026-08-25 (QA)
 
 ## Implementierungsnotizen
 - Frontend umgesetzt: `/kunden` (Kunden-Übersicht mit Suche + "Archiviert anzeigen"-Toggle), `/kunden/[kundeId]` (Kunde-Detail + Projekt-Liste), `/kunden/[kundeId]/[projektId]` (Projekt-Detail-Platzhalter für PROJ-3 ff.), Dashboard-Widget auf `/dashboard`. Navigation im geschützten Header (`src/app/(protected)/layout.tsx`) um einen "Kunden"-Link ergänzt.
@@ -183,7 +183,88 @@ Gespeichert in: Supabase (PostgreSQL) — wie alle bisherigen Daten des Tools. S
 Keine neuen npm-Pakete nötig — alle benötigten Bausteine (`react-hook-form`, `zod`, `@hookform/resolvers`, shadcn/ui `Table`/`Dialog`/`AlertDialog`/`DropdownMenu`/`Badge`/`Input`, `@supabase/ssr`) sind bereits aus PROJ-1/PROJ-2 im Projekt vorhanden.
 
 ## QA Test Results
-_To be added by /qa_
+
+**Tested:** 2026-08-25
+**App URL:** http://localhost:3000
+**Tester:** QA Engineer (AI)
+
+### Acceptance Criteria Status
+
+#### AC-1: Kunde anlegen → Auto-Redirect ins erste Projekt
+- [x] Firmenname + E-Mail eingeben, "Kunde anlegen" → Kunde erscheint in der Liste, Weiterleitung auf `/kunden/[kundeId]/[projektId]` des automatisch erstellten ersten Projekts (Default-Name = Firmenname)
+
+#### AC-2: Duplikat-E-Mail-Warnung
+- [x] Zweiter Kunde mit identischer E-Mail (auch bei abweichender Groß-/Kleinschreibung) → Warnung mit Name des bestehenden Kunden erscheint, "Trotzdem anlegen" legt den Kunden trotzdem an
+
+#### AC-3: Pflichtfeld-Validierung
+- [x] Leeres Formular abschicken → "Firmenname ist erforderlich" und "Ungültige E-Mail-Adresse" erscheinen, kein Request an den Server
+
+#### AC-4: Neues Projekt erscheint in der Projekt-Liste
+- [x] Zweites Projekt für einen bestehenden Kunden angelegt → erscheint in dessen Projekt-Liste
+- [x] Projekt-Anzahl-Spalte auf `/kunden` aktualisiert sich korrekt nach Rücknavigation über den Nav-Link (kein harter Reload nötig) — siehe Hinweis unter "Untersuchte, nicht bestätigte Vermutung"
+
+#### AC-5: Archivieren/Reaktivieren + Filter
+- [x] "Archivieren" → Kunde verschwindet aus Standardansicht, bleibt über "Archiviert anzeigen" sichtbar und reaktivierbar
+
+#### AC-6: Endgültiges Löschen ohne abhängige Daten
+- [x] Kunde ohne Projekte (bzw. Projekt ohne abhängige Daten) → "Endgültig löschen" + Bestätigung entfernt den Datensatz unwiderruflich (verifiziert per SQL: Zeile nach dem Löschen nicht mehr vorhanden)
+
+#### AC-7: Löschoption deaktiviert bei abhängigen Daten
+- [x] Kunde mit mindestens einem Projekt → "Endgültig löschen" ist im Menü deaktiviert (`data-disabled`), mit Tooltip-Begründung; nur Archivieren bleibt möglich
+
+#### AC-8: Dashboard-Widget
+- [x] Widget zeigt korrekte Kennzahlen ("X Kunden, Y aktive Projekte") und den Link "Alle Kunden ansehen →"
+
+#### AC-9: Leerzustände
+- [x] `/kunden` ohne Kunden → Hinweistext + "Ersten Kunden anlegen"-Button
+- [x] Dashboard ohne Kunden → reduzierte Widget-Variante mit "Kunden anlegen"-Button
+
+#### AC-10: Textsuche
+- [x] Suchbegriff ohne Treffer → "Keine Kunden gefunden für …"; Suchbegriff mit Treffer → Liste filtert live auf Firmenname/Ansprechpartner
+
+### Edge Cases Status
+
+#### EC-1: Gleichzeitige Bearbeitung durch zwei Mitarbeiter
+- [x] Verifiziert in `/backend`: zwei unabhängig eingeloggte Testnutzer sehen dieselben Kunden/Projekte (Shared Visibility). Konfliktverhalten selbst (last-write-wins) ist eine bewusste Design-Entscheidung ohne eigene Schutzmechanik — nichts zu testen, was fehlschlagen könnte
+
+#### EC-2: Archivierter Kunde reaktivieren, Projekte behalten ihren Status
+- [x] Kunde archiviert und wieder reaktiviert → sein (aktives) Projekt blieb während der gesamten Zeit "Aktiv", kein automatisches Mit-Archivieren/Reaktivieren
+
+#### EC-3: Netzwerk-/Serverfehler beim Speichern
+- [ ] Nicht per echter Netzwerksimulation getestet (kein einfacher Weg, einen Supabase-Ausfall gezielt zu erzwingen). Per Code-Review verifiziert: alle Server Actions geben bei Fehlern `{ error }` zurück, alle Formulardialoge zeigen das über ein `Alert` an und schließen sich nicht — Verhalten ist strukturell identisch zum bereits in PROJ-2 getesteten Login-Formular
+
+#### EC-4: Projekt ändert sich, Kunde bleibt unberührt
+- [x] Projekte angelegt/gelöscht → Kunden-Stammdaten und -Status unverändert
+
+#### EC-5: Letzter verbleibender Kunde wird archiviert → Leerzustand
+- [ ] Nicht als exakt dieses Szenario durchgespielt (stattdessen wurde der letzte Test-Kunde gelöscht statt archiviert). Der Leerzustand-Code-Pfad selbst ist über AC-9 (0 Kunden gesamt) abgedeckt und identisch für "0 Kunden" und "0 nicht-archivierte Kunden bei ausgeblendetem Archiv-Filter"
+
+### Untersuchte, nicht bestätigte Vermutung
+Beim Code-Review fiel auf, dass `createProject` (`src/lib/clients/actions.ts`) nur `/kunden/[kundeId]` und `/dashboard` revalidiert, nicht `/kunden` selbst — die Vermutung war, dass die Projekt-Anzahl-Spalte auf `/kunden` nach dem Anlegen eines Projekts ohne harten Reload veraltet bleiben könnte. Gezielt nachgetestet (Projekt anlegen → über den "Kunden"-Nav-Link zurück, kein `page.reload()`): die Spalte zeigt korrekt den neuen Wert. Next.js' Router Cache invalidiert dynamische Routen offenbar bei jeder Navigation, der fehlende `revalidatePath('/kunden')`-Aufruf hat in der Praxis keine sichtbare Auswirkung. Kein Bug, aber der Vollständigkeit halber dokumentiert.
+
+### Security Audit Results
+- [x] Authentication: `/kunden` und `/kunden/[kundeId]` ohne Login → Redirect zu `/login?redirect=…` (Proxy-Schutz aus PROJ-2 greift auch für die neuen Routen)
+- [x] Authorization/RLS: Anon-Supabase-Key wird bereits auf GRANT-Ebene abgewiesen (`42501 permission denied`, sowohl bei SELECT als auch INSERT) — stärker als ein rein RLS-gefiltertes leeres Ergebnis, da kein Client-seitiger Zugriff überhaupt möglich ist
+- [x] Input validation / XSS: Firmenname `QA17-<img src=x onerror=alert(1)> GmbH` wird als reiner Text gerendert (kein `<img>`-Element im DOM, kein Alert ausgelöst) — React entschärft das automatisch, es wird nirgends `dangerouslySetInnerHTML` verwendet
+- [x] Shared Visibility ist beabsichtigt (Single-Tenant, siehe PROJ-1 Decision Log) und funktioniert wie vorgesehen — kein IDOR-Test anwendbar, da es kein Besitzer-Konzept gibt
+- [ ] N/A Rate limiting: für dieses CRUD-Feature nicht spezifiziert (siehe PROJ-2 Decision Log: kein zusätzliches UI-Rate-Limiting im MVP)
+
+### Regressionstests
+- [x] `npm test` (Vitest): 25/25 grün (7 Testdateien, inkl. neuer `recent-activity.test.ts`)
+- [x] `npm run build` / `npm run lint`: fehlerfrei
+- [x] PROJ-2-Regressionssuite (`tests/PROJ-2-agentur-login.spec.ts`): 12/12 grün auf Chromium — relevant, da der gemeinsame Header (`src/app/(protected)/layout.tsx`) für PROJ-17 verändert wurde
+- [x] Neue permanente E2E-Suite `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts`: 3/3 grün auf Chromium UND auf Mobile Safari/WebKit (deckt alle zehn Acceptance Criteria, die Sicherheitsprüfungen und den 375px-Mobile-Check ab)
+
+### Bugs Found
+Keine. Die einzigen während der QA aufgetretenen Fehlschläge waren zwei Test-Skript-Fehler (Playwright-Testisolation zwischen `test()`-Blöcken bzw. Timing beim Schließen eines Dropdown-Menüs vor einer Navigation) — beide beim Schreiben der permanenten Suite korrigiert, keine Auswirkung auf die App selbst.
+
+### Summary
+- **Acceptance Criteria:** 10/10 passed
+- **Edge Cases:** 3/5 aktiv verifiziert, 2/5 per Code-Review abgedeckt (siehe oben, keine offenen Zweifel)
+- **Bugs Found:** 0
+- **Security:** Pass (Auth-Schutz, RLS/GRANT-Schutz, XSS-Schutz alle bestätigt)
+- **Production Ready:** YES
+- **Recommendation:** Deploy
 
 ## Deployment
 _To be added by /deploy_
