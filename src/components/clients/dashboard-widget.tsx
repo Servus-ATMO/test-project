@@ -1,15 +1,15 @@
-'use client'
-
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useClients } from '@/hooks/useClients'
+import { getRecentActivity } from '@/lib/clients/recent-activity'
+import type { Client, Project } from '@/lib/clients/types'
 
-export function DashboardWidget() {
-  const { clients, projects, loaded, recentActivity } = useClients()
+interface DashboardWidgetProps {
+  clients: Client[]
+  projects: Project[]
+}
 
-  if (!loaded) return null
-
+export function DashboardWidget({ clients, projects }: DashboardWidgetProps) {
   if (clients.length === 0) {
     return (
       <Card>
@@ -27,7 +27,7 @@ export function DashboardWidget() {
   }
 
   const activeProjectCount = projects.filter((p) => p.status === 'active').length
-  const recent = recentActivity(5)
+  const recent = getRecentActivity(clients, projects, 5)
 
   return (
     <Card>

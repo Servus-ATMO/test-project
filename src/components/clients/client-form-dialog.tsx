@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { createClientAndFirstProject, updateClient } from '@/lib/clients/actions'
+import { isRedirectError } from '@/lib/auth/is-redirect-error'
 import { clientSchema, type ClientFormValues } from '@/lib/validations/clients'
 import type { Client } from '@/lib/clients/types'
 
@@ -31,19 +34,13 @@ interface ClientFormDialogProps {
   mode: 'create' | 'edit'
   client?: Client
   trigger: React.ReactNode
-  checkDuplicateEmail: (email: string, excludeClientId?: string) => Client | undefined
-  onSubmit: (values: ClientFormValues) => void
 }
 
-export function ClientFormDialog({
-  mode,
-  client,
-  trigger,
-  checkDuplicateEmail,
-  onSubmit,
-}: ClientFormDialogProps) {
+export function ClientFormDialog({ mode, client, trigger }: ClientFormDialogProps) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [duplicate, setDuplicate] = useState<Client | null>(null)
+  const [duplicateName, setDuplicateName] = useState<string | null>(null)
+  const [serverError, setServerError] = useState<string | null>(null)
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema),
@@ -63,24 +60,43 @@ export function ClientFormDialog({
         contactEmail: client?.contactEmail ?? '',
         notes: client?.notes ?? '',
       })
-      setDuplicate(null)
+      setDuplicateName(null)
+      setServerError(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const handleSubmit = (values: ClientFormValues) => {
-    // Weiche Warnung nur beim Neuanlegen relevant (siehe PROJ-17 Acceptance
-    // Criteria) - beim Bearbeiten kollidiert ein Kunde nicht mit sich selbst.
-    if (mode === 'create' && !duplicate) {
-      const found = checkDuplicateEmail(values.contactEmail)
-      if (found) {
-        setDuplicate(found)
-        return
+  const handleSubmit = async (values: ClientFormValues) => {
+    setServerError(null)
+    try {
+      if (mode === 'create') {
+        // Weiche Warnung nur beim Neuanlegen relevant (siehe PROJ-17 Acceptance
+        // Criteria). duplicateName gesetzt heisst: zweiter Submit, Nutzer hat
+        // "Trotzdem anlegen" geklickt -> Server ueberspringt die Pruefung.
+        const result = await createClientAndFirstProject(values, duplicateName !== null)
+        if (result?.status === 'duplicate') {
+          setDuplicateName(result.existingCompanyName)
+          return
+        }
+        if (result?.status === 'error') {
+          setServerError(result.error)
+          return
+        }
+        // Erfolgsfall: die Action wirft redirect() (siehe catch unten), hier
+        // wird also nie weitergemacht.
+      } else if (client) {
+        const result = await updateClient(client.id, values)
+        if (result?.error) {
+          setServerError(result.error)
+          return
+        }
+        router.refresh()
       }
+      setOpen(false)
+    } catch (err) {
+      if (isRedirectError(err)) throw err
+      setServerError('Der Server ist gerade nicht erreichbar. Bitte versuche es erneut.')
     }
-    onSubmit(values)
-    setOpen(false)
-    setDuplicate(null)
   }
 
   return (
@@ -98,12 +114,17 @@ export function ClientFormDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4" noValidate>
-            {duplicate && (
+            {serverError && (
+              <Alert variant="destructive">
+                <AlertDescription>{serverError}</AlertDescription>
+              </Alert>
+            )}
+
+            {duplicateName && (
               <Alert variant="destructive">
                 <AlertTitle>Ein Kunde mit dieser E-Mail existiert bereits</AlertTitle>
                 <AlertDescription>
-                  „{duplicate.companyName}&quot; nutzt bereits {duplicate.contactEmail}. Trotzdem
-                  anlegen?
+                  „{duplicateName}&quot; nutzt bereits diese E-Mail-Adresse. Trotzdem anlegen?
                 </AlertDescription>
               </Alert>
             )}
@@ -165,8 +186,8 @@ export function ClientFormDialog({
             />
 
             <DialogFooter>
-              <Button type="submit">
-                {duplicate
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {duplicateName
                   ? 'Trotzdem anlegen'
                   : mode === 'create'
                     ? 'Kunde anlegen'

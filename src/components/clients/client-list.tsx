@@ -24,22 +24,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ClientFormDialog } from './client-form-dialog'
 import { DeleteAlertDialog } from './delete-alert-dialog'
-import { useClients } from '@/hooks/useClients'
+import { deleteClient, setClientStatus } from '@/lib/clients/actions'
+import type { Client, Project } from '@/lib/clients/types'
 
-export function ClientList() {
+interface ClientListProps {
+  clients: Client[]
+  projects: Project[]
+}
+
+export function ClientList({ clients, projects }: ClientListProps) {
   const router = useRouter()
-  const {
-    clients,
-    projects,
-    loaded,
-    createClient,
-    updateClient,
-    setClientStatus,
-    deleteClient,
-    canDeleteClient,
-    checkDuplicateEmail,
-  } = useClients()
-
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
 
@@ -53,14 +47,10 @@ export function ClientList() {
           c.companyName.toLowerCase().includes(term) ||
           c.contactName.toLowerCase().includes(term)
       )
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }, [clients, search, showArchived])
 
   const projectCount = (clientId: string) => projects.filter((p) => p.clientId === clientId).length
-
-  if (!loaded) {
-    return null
-  }
+  const canDeleteClient = (clientId: string) => projectCount(clientId) === 0
 
   if (clients.length === 0) {
     return (
@@ -68,11 +58,6 @@ export function ClientList() {
         <p className="text-muted-foreground">Noch keine Kunden angelegt.</p>
         <ClientFormDialog
           mode="create"
-          checkDuplicateEmail={checkDuplicateEmail}
-          onSubmit={(values) => {
-            const { project } = createClient(values)
-            router.push(`/kunden/${project.clientId}/${project.id}`)
-          }}
           trigger={<Button className="mt-4">Ersten Kunden anlegen</Button>}
         />
       </div>
@@ -99,15 +84,7 @@ export function ClientList() {
             </Label>
           </div>
         </div>
-        <ClientFormDialog
-          mode="create"
-          checkDuplicateEmail={checkDuplicateEmail}
-          onSubmit={(values) => {
-            const { project } = createClient(values)
-            router.push(`/kunden/${project.clientId}/${project.id}`)
-          }}
-          trigger={<Button>Neuer Kunde</Button>}
-        />
+        <ClientFormDialog mode="create" trigger={<Button>Neuer Kunde</Button>} />
       </div>
 
       {filtered.length === 0 ? (
@@ -154,8 +131,6 @@ export function ClientList() {
                       <ClientFormDialog
                         mode="edit"
                         client={client}
-                        checkDuplicateEmail={checkDuplicateEmail}
-                        onSubmit={(values) => updateClient(client.id, values)}
                         trigger={
                           <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                             Bearbeiten
@@ -163,19 +138,23 @@ export function ClientList() {
                         }
                       />
                       <DropdownMenuItem
-                        onClick={() =>
-                          setClientStatus(
+                        onClick={async () => {
+                          await setClientStatus(
                             client.id,
                             client.status === 'active' ? 'archived' : 'active'
                           )
-                        }
+                          router.refresh()
+                        }}
                       >
                         {client.status === 'active' ? 'Archivieren' : 'Reaktivieren'}
                       </DropdownMenuItem>
                       {canDeleteClient(client.id) ? (
                         <DeleteAlertDialog
                           entityLabel={client.companyName}
-                          onConfirm={() => deleteClient(client.id)}
+                          onConfirm={async () => {
+                            await deleteClient(client.id)
+                            router.refresh()
+                          }}
                           trigger={
                             <DropdownMenuItem
                               onSelect={(e) => e.preventDefault()}

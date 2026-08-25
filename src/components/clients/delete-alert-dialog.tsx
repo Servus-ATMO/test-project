@@ -15,7 +15,7 @@ import {
 interface DeleteAlertDialogProps {
   entityLabel: string
   trigger: React.ReactNode
-  onConfirm: () => void
+  onConfirm: () => void | Promise<void>
 }
 
 export function DeleteAlertDialog({ entityLabel, trigger, onConfirm }: DeleteAlertDialogProps) {

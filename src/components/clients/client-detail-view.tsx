@@ -22,42 +22,16 @@ import {
 import { ClientFormDialog } from './client-form-dialog'
 import { ProjectFormDialog } from './project-form-dialog'
 import { DeleteAlertDialog } from './delete-alert-dialog'
-import { useClients } from '@/hooks/useClients'
+import { setClientStatus, setProjectStatus, deleteProject } from '@/lib/clients/actions'
+import type { Client, Project } from '@/lib/clients/types'
 
-export function ClientDetailView({ clientId }: { clientId: string }) {
+interface ClientDetailViewProps {
+  client: Client
+  projects: Project[]
+}
+
+export function ClientDetailView({ client, projects }: ClientDetailViewProps) {
   const router = useRouter()
-  const {
-    loaded,
-    getClientById,
-    getProjectsForClient,
-    updateClient,
-    setClientStatus,
-    checkDuplicateEmail,
-    createProject,
-    updateProject,
-    setProjectStatus,
-    deleteProject,
-    canDeleteProject,
-  } = useClients()
-
-  if (!loaded) return null
-
-  const client = getClientById(clientId)
-
-  if (!client) {
-    return (
-      <div className="space-y-4">
-        <p className="text-muted-foreground">Dieser Kunde wurde nicht gefunden.</p>
-        <Button variant="outline" onClick={() => router.push('/kunden')}>
-          Zurück zur Kunden-Übersicht
-        </Button>
-      </div>
-    )
-  }
-
-  const clientProjects = getProjectsForClient(clientId).sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt)
-  )
 
   return (
     <div className="space-y-6">
@@ -78,8 +52,6 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
           <ClientFormDialog
             mode="edit"
             client={client}
-            checkDuplicateEmail={checkDuplicateEmail}
-            onSubmit={(values) => updateClient(client.id, values)}
             trigger={<Button variant="outline">Bearbeiten</Button>}
           />
         </CardHeader>
@@ -96,32 +68,29 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() =>
-              setClientStatus(client.id, client.status === 'active' ? 'archived' : 'active')
-            }
+            onClick={async () => {
+              await setClientStatus(client.id, client.status === 'active' ? 'archived' : 'active')
+              router.refresh()
+            }}
           >
             Kunde {client.status === 'active' ? 'archivieren' : 'reaktivieren'}
           </Button>
           <ProjectFormDialog
             mode="create"
-            onSubmit={(values) => {
-              const project = createProject(clientId, values)
-              router.push(`/kunden/${clientId}/${project.id}`)
-            }}
+            clientId={client.id}
+            onCreated={(projectId) => router.push(`/kunden/${client.id}/${projectId}`)}
             trigger={<Button>Neues Projekt</Button>}
           />
         </div>
       </div>
 
-      {clientProjects.length === 0 ? (
+      {projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
           <p className="text-muted-foreground">Noch keine Projekte für diesen Kunden.</p>
           <ProjectFormDialog
             mode="create"
-            onSubmit={(values) => {
-              const project = createProject(clientId, values)
-              router.push(`/kunden/${clientId}/${project.id}`)
-            }}
+            clientId={client.id}
+            onCreated={(projectId) => router.push(`/kunden/${client.id}/${projectId}`)}
             trigger={<Button className="mt-4">Erstes Projekt anlegen</Button>}
           />
         </div>
@@ -135,11 +104,11 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {clientProjects.map((project) => (
+            {projects.map((project) => (
               <TableRow
                 key={project.id}
                 className="cursor-pointer"
-                onClick={() => router.push(`/kunden/${clientId}/${project.id}`)}
+                onClick={() => router.push(`/kunden/${client.id}/${project.id}`)}
               >
                 <TableCell className="font-medium">{project.name}</TableCell>
                 <TableCell>
@@ -158,8 +127,8 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
                     <DropdownMenuContent align="end">
                       <ProjectFormDialog
                         mode="edit"
+                        clientId={client.id}
                         project={project}
-                        onSubmit={(values) => updateProject(project.id, values)}
                         trigger={
                           <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                             Bearbeiten
@@ -167,31 +136,32 @@ export function ClientDetailView({ clientId }: { clientId: string }) {
                         }
                       />
                       <DropdownMenuItem
-                        onClick={() =>
-                          setProjectStatus(
+                        onClick={async () => {
+                          await setProjectStatus(
                             project.id,
+                            client.id,
                             project.status === 'active' ? 'archived' : 'active'
                           )
-                        }
+                          router.refresh()
+                        }}
                       >
                         {project.status === 'active' ? 'Archivieren' : 'Reaktivieren'}
                       </DropdownMenuItem>
-                      {canDeleteProject(project.id) ? (
-                        <DeleteAlertDialog
-                          entityLabel={project.name}
-                          onConfirm={() => deleteProject(project.id)}
-                          trigger={
-                            <DropdownMenuItem
-                              onSelect={(e) => e.preventDefault()}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              Endgültig löschen
-                            </DropdownMenuItem>
-                          }
-                        />
-                      ) : (
-                        <DropdownMenuItem disabled>Endgültig löschen</DropdownMenuItem>
-                      )}
+                      <DeleteAlertDialog
+                        entityLabel={project.name}
+                        onConfirm={async () => {
+                          await deleteProject(project.id, client.id)
+                          router.refresh()
+                        }}
+                        trigger={
+                          <DropdownMenuItem
+                            onSelect={(e) => e.preventDefault()}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            Endgültig löschen
+                          </DropdownMenuItem>
+                        }
+                      />
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

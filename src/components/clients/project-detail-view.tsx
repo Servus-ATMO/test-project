@@ -1,43 +1,25 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ProjectFormDialog } from './project-form-dialog'
-import { useClients } from '@/hooks/useClients'
+import type { Client, Project } from '@/lib/clients/types'
 
-export function ProjectDetailView({
-  clientId,
-  projectId,
-}: {
-  clientId: string
-  projectId: string
-}) {
-  const router = useRouter()
-  const { loaded, getClientById, getProjectById, updateProject } = useClients()
+interface ProjectDetailViewProps {
+  client: Client
+  project: Project
+}
 
-  if (!loaded) return null
-
-  const client = getClientById(clientId)
-  const project = getProjectById(projectId)
-
-  if (!client || !project || project.clientId !== clientId) {
-    return (
-      <div className="space-y-4">
-        <p className="text-muted-foreground">Dieses Projekt wurde nicht gefunden.</p>
-        <Button variant="outline" onClick={() => router.push('/kunden')}>
-          Zurück zur Kunden-Übersicht
-        </Button>
-      </div>
-    )
-  }
-
+export function ProjectDetailView({ client, project }: ProjectDetailViewProps) {
   return (
     <div className="space-y-6">
-      <Link href={`/kunden/${clientId}`} className="text-sm text-muted-foreground hover:underline">
+      <Link
+        href={`/kunden/${client.id}`}
+        className="text-sm text-muted-foreground hover:underline"
+      >
         ← {client.companyName}
       </Link>
 
@@ -53,8 +35,8 @@ export function ProjectDetailView({
           </div>
           <ProjectFormDialog
             mode="edit"
+            clientId={client.id}
             project={project}
-            onSubmit={(values) => updateProject(project.id, values)}
             trigger={<Button variant="outline">Bearbeiten</Button>}
           />
         </CardHeader>
