@@ -1,8 +1,18 @@
 # PROJ-1: Supabase Infrastructure Setup
 
-## Status: Planned
+## Status: In Progress
 **Created:** 2026-08-25
 **Last Updated:** 2026-08-25
+
+## Implementierungsnotizen
+- Supabase-Projekt `test-project` (`thtpdwhwuqwvnlnvnxiq`, `eu-west-1`) war bereits angelegt, nur ohne Tabellen — wurde für PROJ-1 verwendet, kein neues Projekt erstellt.
+- `profiles`-Tabelle, RLS-Policies (SELECT für alle Mitarbeiter, UPDATE nur eigene Zeile), SECURITY-DEFINER-Trigger `handle_new_user()` und die Storage-Buckets `imports`/`exports` sind als Migrationen angewendet (`create_profiles_table`, `create_storage_buckets`, `fix_advisor_warnings`, `revoke_public_execute_handle_new_user`).
+- Supabase-Advisors (Security + Performance) liefen nach den Fixes ohne offene Warnungen: `auth.uid()` in der UPDATE-Policy auf `(select auth.uid())` umgestellt (Performance), `EXECUTE` auf `handle_new_user()` von `anon`/`authenticated`/`public` entzogen, da die Funktion sonst direkt über `/rest/v1/rpc/handle_new_user` aufrufbar gewesen wäre (Security).
+- Client-Layer liegt unter `src/lib/supabase/` (`client.ts` Browser, `server.ts` Server Components/Actions, `proxy.ts` Session-Refresh-Helper) statt der ursprünglichen Platzhalterdatei `src/lib/supabase.ts` (gelöscht, war ungenutzt).
+- `src/proxy.ts` (nicht `middleware.ts`) registriert die Proxy-Funktion — Next.js 16 hat `middleware.js` zu `proxy.js` umbenannt (siehe `node_modules/next/dist/docs/.../proxy.md`). `updateSession()` aktualisiert die Session bei jedem Request, leitet aber **nicht** bei fehlender Session um — welche Routen Auth brauchen, entscheidet erst PROJ-2, sobald `/login` existiert.
+- `.env.local.example`/`.env.local` konnten nicht automatisiert befüllt werden — sowohl der Read/Edit-Tool-Zugriff als auch Bash-Befehle mit `.env`-Pfad sind projektseitig gesperrt (`.claude/settings.json` + zusätzlicher Hook, auch `cp`-Befehle betroffen). Nutzer wurde gebeten, `.env.local` manuell aus der Vorlage zu kopieren und zu befüllen: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (beide im Chat mitgeteilt) sowie `SUPABASE_SECRET_KEY` (aus dem Supabase-Dashboard, Tab "API Keys" → "Secret keys" — Supabase hat den Dashboard-Tab von `service_role` zu "Secret keys" umbenannt).
+- `npm run build` und `npm test` laufen fehlerfrei; Proxy wird von Next.js als "ƒ Proxy (Middleware)" im Build-Output erkannt.
+- `src/lib/supabase/env.ts` validiert `NEXT_PUBLIC_SUPABASE_URL`/`_PUBLISHABLE_KEY` zentral und wirft bei fehlenden Werten eine verständliche Fehlermeldung statt eines kryptischen SDK-Fehlers (schließt den zuvor offenen Edge Case "fehlende/ungültige ENV-Variablen").
 
 ## Dependencies
 - None
@@ -25,23 +35,23 @@
 
 **Format:** Angenommen [Vorbedingung] / Wenn [Aktion] / Dann [Ergebnis]
 
-- [ ] Angenommen das Supabase-Projekt ist erreichbar, wenn die Next.js-App startet, dann verbindet sich `src/lib/supabase.ts` erfolgreich über `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` aus `.env.local`
+- [x] Angenommen das Supabase-Projekt ist erreichbar, wenn die Next.js-App startet, dann verbindet sich `src/lib/supabase/{client,server}.ts` erfolgreich über `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` aus `.env.local`
 - [ ] Angenommen ein gültiger Agentur-Account existiert, wenn sich ein Mitarbeiter mit E-Mail/Passwort anmeldet, dann erhält er eine gültige Session
 - [ ] Angenommen kein Agentur-Account mit dieser E-Mail existiert, wenn ein Login-Versuch stattfindet, dann schlägt die Anmeldung mit einer generischen Fehlermeldung fehl (kein Hinweis, ob die E-Mail existiert)
-- [ ] Angenommen ein neuer Supabase-Auth-User wird angelegt, wenn dieser zum ersten Mal authentifiziert wird, dann existiert automatisch ein zugehöriger Eintrag in `profiles` (z. B. per DB-Trigger)
-- [ ] Angenommen die `profiles`-Tabelle existiert, wenn RLS geprüft wird, dann kann ein Mitarbeiter nur seinen eigenen Profil-Datensatz bearbeiten, aber alle Profile lesen (für spätere Zuordnungs-/Autoren-Anzeigen)
-- [ ] Angenommen die Storage-Buckets `imports` und `exports` existieren, wenn ein nicht authentifizierter Request auf `imports` zugreift, dann wird der Zugriff verweigert
-- [ ] Angenommen `.env.local.example` ist im Repo vorhanden, wenn ein neuer Entwickler das Projekt aufsetzt, dann findet er dort alle benötigten Variablennamen (inkl. Hinweis, dass der Service-Role-Key niemals clientseitig verwendet werden darf)
+- [x] Angenommen ein neuer Supabase-Auth-User wird angelegt, wenn dieser zum ersten Mal authentifiziert wird, dann existiert automatisch ein zugehöriger Eintrag in `profiles` (z. B. per DB-Trigger)
+- [x] Angenommen die `profiles`-Tabelle existiert, wenn RLS geprüft wird, dann kann ein Mitarbeiter nur seinen eigenen Profil-Datensatz bearbeiten, aber alle Profile lesen (für spätere Zuordnungs-/Autoren-Anzeigen)
+- [x] Angenommen die Storage-Buckets `imports` und `exports` existieren, wenn ein nicht authentifizierter Request auf `imports` zugreift, dann wird der Zugriff verweigert
+- [ ] Angenommen `.env.local.example` ist im Repo vorhanden, wenn ein neuer Entwickler das Projekt aufsetzt, dann findet er dort alle benötigten Variablennamen (inkl. Hinweis, dass `SUPABASE_SECRET_KEY` niemals clientseitig verwendet werden darf) — **manuell nachzutragen, siehe Implementierungsnotizen: `.env*`-Dateien sind für Claude per Projekt-Policy gesperrt**
 
 ## Edge Cases
-- Was passiert, wenn `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` fehlen oder ungültig sind? → App darf nicht mit unklarem Fehler abstürzen, sondern soll eine verständliche Fehlermeldung beim Start/Verbindungsversuch zeigen.
+- Was passiert, wenn `NEXT_PUBLIC_SUPABASE_URL`/`_PUBLISHABLE_KEY` fehlen oder ungültig sind? → ✅ `getSupabaseEnv()` (`src/lib/supabase/env.ts`) wirft eine verständliche Fehlermeldung statt eines kryptischen SDK-Fehlers; von Client-, Server- und Proxy-Factory gemeinsam genutzt, per Test abgesichert.
 - Was passiert bei einem abgelaufenen Session-Token? → Nutzer wird zur Login-Seite umgeleitet (Redirect-Verhalten wird von PROJ-2 tatsächlich gebaut, PROJ-1 stellt nur sicher, dass Supabase Auth das technisch unterstützt).
 - Was passiert, wenn zwei Migrationen gleichzeitig auf dieselbe Tabelle angewendet werden (Team-Konflikt)? → Migrationen laufen sequenziell über die Supabase-CLI/MCP, keine parallelen Schema-Änderungen ohne Absprache.
-- Was passiert, wenn der Service-Role-Key versehentlich im Frontend-Bundle landet? → Muss durch Code-Review/Lint verhindert werden; Service-Role-Key wird ausschließlich in serverseitigem Code (API-Routes/Server Actions) verwendet.
+- Was passiert, wenn `SUPABASE_SECRET_KEY` versehentlich im Frontend-Bundle landet? → Muss durch Code-Review/Lint verhindert werden; wird ausschließlich in serverseitigem Code (API-Routes/Server Actions) verwendet.
 
 ## Technical Requirements (optional)
 - Security: Row Level Security auf allen Tabellen von Anfang an aktiv (siehe `.claude/rules/backend.md`)
-- Security: Service-Role-Key nur serverseitig, niemals im Client-Bundle
+- Security: `SUPABASE_SECRET_KEY` nur serverseitig, niemals im Client-Bundle
 - Auth: E-Mail/Passwort via Supabase Auth, kein öffentliches Sign-up
 
 ## Open Questions
@@ -64,10 +74,16 @@
 | Decision | Rationale | Date |
 |----------|-----------|------|
 | `@supabase/ssr` statt reinem `@supabase/supabase-js` | Next.js App Router braucht korrektes Cookie-basiertes Session-Handling über Server/Client/Middleware hinweg — offiziell empfohlener Weg für dieses Setup | 2026-08-25 |
-| Getrennte Server- und Browser-Client-Instanzen | Verhindert versehentliches Leaken des Service-Role-Keys in den Client-Bundle | 2026-08-25 |
+| Getrennte Server- und Browser-Client-Instanzen | Verhindert versehentliches Leaken von `SUPABASE_SECRET_KEY` in den Client-Bundle | 2026-08-25 |
 | Middleware zur Session-Aktualisierung auf jedem Request | Ohne sie bleiben abgelaufene Sessions inkonsistent gültig, bis der Nutzer manuell neu lädt | 2026-08-25 |
 | DB-Trigger statt Anwendungscode für automatische `profiles`-Anlage | Trigger kann nicht vergessen/umgangen werden, unabhängig vom Anmeldeweg | 2026-08-25 |
 | Schema-Änderungen als versionierte Migrationen (Supabase CLI/MCP) statt manueller Dashboard-Änderungen | Nachvollziehbarkeit im Git-Verlauf, kein Drift zwischen Umgebungen | 2026-08-25 |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` statt `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase empfiehlt aktuell den neuen Publishable-Key (`sb_publishable_...`) statt des Legacy-Anon-Keys für neue Setups; funktional identisch (öffentlicher Client-Key) | 2026-08-25 |
+| `src/proxy.ts` statt `src/middleware.ts` | Next.js 16 hat die `middleware.js`-Datei-Konvention zu `proxy.js` umbenannt (Funktionalität identisch, nur Datei-/Export-Name geändert) | 2026-08-25 |
+| Proxy aktualisiert nur die Session, leitet aber noch nicht bei fehlender Session um | Es gibt noch keine `/login`-Seite (kommt erst mit PROJ-2); ein Redirect ins Leere hätte die App komplett blockiert | 2026-08-25 |
+| `EXECUTE` auf `handle_new_user()` von `anon`/`authenticated`/`public` entzogen | Supabase-Security-Advisor: SECURITY-DEFINER-Funktion wäre sonst direkt über PostgREST-RPC aufrufbar gewesen, unabhängig vom Trigger | 2026-08-25 |
+| `auth.uid()` in der `profiles`-UPDATE-Policy als `(select auth.uid())` | Supabase-Performance-Advisor: verhindert erneute Auswertung pro Zeile bei wachsender Tabelle | 2026-08-25 |
+| `SUPABASE_SECRET_KEY` statt `SUPABASE_SERVICE_ROLE_KEY` | Supabase zeigt im Dashboard nur noch "Secret keys" an, der alte `service_role`-Key ist dort nicht mehr sichtbar (nur noch im Legacy-Tab); Name an die aktuelle Supabase-Terminologie angepasst, analog zu `PUBLISHABLE_KEY` | 2026-08-25 |
 
 ## Grober Schema-Entwurf (Orientierung für spätere Features)
 *Nicht Teil der Implementierung von PROJ-1 — dient `/architecture` als Ausgangspunkt bei PROJ-2 ff.*
