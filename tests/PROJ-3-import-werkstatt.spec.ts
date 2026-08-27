@@ -103,6 +103,52 @@ test('anon Supabase key cannot read or write import tables directly (no GRANT fo
   expect(writeError?.code).toBe('42501')
 })
 
+test('save_interview_import() is atomic: a failure partway through leaves no partial rows (regression for BUG-1)', async () => {
+  // BUG-1 aus der ersten /qa-Runde: saveImport() schrieb interview_imports/
+  // import_sections/import_entries/import_fields urspruenglich als mehrere
+  // unabhaengige, nicht transaktionale Inserts - ein Fehler mitten im Vorgang
+  // konnte Teildaten dauerhaft hinterlassen (verletzte AC-11 "keine Teildaten
+  // uebernehmen"). Fix: die Postgres-Funktion save_interview_import() buendelt
+  // den gesamten strukturierten Speichervorgang in einer DB-Transaktion.
+  // Provoziert hier gezielt einen Fehler NACH dem (innerhalb der Funktion
+  // erfolgreichen) Einfuegen von import_sections, aber WAEHREND import_entries
+  // (Fremdschluessel-Verletzung durch eine bewusst falsche section_id) - und
+  // prueft, dass trotzdem GAR NICHTS committet wurde.
+  const admin = adminClient()
+  const fakeSectionId = '11111111-1111-1111-1111-111111111111'
+  const mismatchedEntrySectionId = '99999999-9999-9999-9999-999999999999'
+
+  const { error } = await admin.rpc('save_interview_import', {
+    p_project_id: projectId,
+    p_journey_file_path: 'test/journey.md',
+    p_konzept_file_path: 'test/konzept.md',
+    p_journey_datum: '2026-08-27',
+    p_journey_gefuehrt_mit: 'Test',
+    p_journey_prompt_version: 'v2',
+    p_konzept_datum: '2026-08-27',
+    p_konzept_erstellt_mit: 'Test',
+    p_imported_at: new Date().toISOString(),
+    p_sections: [{ id: fakeSectionId, document: 'journey', name: 'Test-Abschnitt', position: 0 }],
+    p_entries: [{ id: '22222222-2222-2222-2222-222222222222', section_id: mismatchedEntrySectionId, label: '', position: 0 }],
+    p_fields: [],
+  })
+  expect(error).not.toBeNull()
+
+  const { data: importRow } = await admin
+    .from('interview_imports')
+    .select('id')
+    .eq('project_id', projectId)
+    .maybeSingle()
+  expect(importRow).toBeNull()
+
+  const { data: orphanSection } = await admin
+    .from('import_sections')
+    .select('id')
+    .eq('id', fakeSectionId)
+    .maybeSingle()
+  expect(orphanSection).toBeNull()
+})
+
 test('PROJ-3: Upload, Validierung, Vorschau, Übernahme, Lese-Übersicht, Re-Import, Löschschutz', async ({
   page,
 }) => {

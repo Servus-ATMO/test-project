@@ -33,6 +33,7 @@ export function ImportPanel({ clientId, projectId, initialImport }: ImportPanelP
   const [saveError, setSaveError] = useState<string | null>(null)
   const [dependentDataWarning, setDependentDataWarning] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
+  const [storageWarning, setStorageWarning] = useState<string | null>(null)
 
   const handleFileSelected = (slot: 'journey' | 'konzept', file: File | null) => {
     if (slot === 'journey') {
@@ -98,6 +99,7 @@ export function ImportPanel({ clientId, projectId, initialImport }: ImportPanelP
         setSaveError(result.message)
         return
       }
+      setStorageWarning(result.status === 'storage-warning' ? result.message : null)
       setPreview(null)
       setFileTexts(null)
       setJourneyFile(null)
@@ -209,10 +211,23 @@ export function ImportPanel({ clientId, projectId, initialImport }: ImportPanelP
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Import</h2>
-          <Button variant="outline" onClick={() => setShowUpload(true)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStorageWarning(null)
+              setShowUpload(true)
+            }}
+          >
             Erneut importieren
           </Button>
         </div>
+
+        {storageWarning && (
+          <Alert>
+            <AlertTitle>Hinweis</AlertTitle>
+            <AlertDescription>{storageWarning}</AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader>

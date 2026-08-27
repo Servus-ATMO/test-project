@@ -75,6 +75,7 @@ export async function hasDependentImportData(_projectId: string): Promise<boolea
 
 export type SaveImportResult =
   | { status: 'ok' }
+  | { status: 'storage-warning'; message: string }
   | { status: 'dependent-data'; message: string }
   | { status: 'error'; message: string }
 
@@ -106,6 +107,41 @@ export async function saveImport(
 
   const journeyPath = `${projectId}/journey-transkript.md`
   const konzeptPath = `${projectId}/konzept.md`
+
+  const journeyRows = flattenParsedDocument(journey, 'journey')
+  const konzeptRows = flattenParsedDocument(konzept, 'konzept')
+
+  // Strukturierte Daten zuerst und atomar ueber eine einzige Postgres-
+  // Funktion speichern (QA-BUG-1-Fix, 2026-08-27: die vorherige Implementierung
+  // schrieb interview_imports/Sections/Entries/Fields als mehrere unabhaengige,
+  // nicht transaktionale Inserts - ein Fehler mitten im Vorgang konnte
+  // Teildaten dauerhaft hinterlassen). save_interview_import() buendelt Upsert
+  // + Ersatz-Insert in einer DB-Transaktion: entweder alles oder nichts.
+  // Schlaegt dieser Schritt fehl, wurde noch nichts hochgeladen - kein
+  // verwaistes Storage-Objekt moeglich (siehe auch QA-BUG-2).
+  const { data: importId, error: saveError } = await supabase.rpc('save_interview_import', {
+    p_project_id: projectId,
+    p_journey_file_path: journeyPath,
+    p_konzept_file_path: konzeptPath,
+    p_journey_datum: journey.meta.datum,
+    p_journey_gefuehrt_mit: journey.meta.geführtMit,
+    p_journey_prompt_version: journey.meta.promptVersion,
+    p_konzept_datum: konzept.meta.datum,
+    p_konzept_erstellt_mit: konzept.meta.erstelltMit,
+    p_imported_at: new Date().toISOString(),
+    p_sections: [...journeyRows.sections, ...konzeptRows.sections],
+    p_entries: [...journeyRows.entries, ...konzeptRows.entries],
+    p_fields: [...journeyRows.fields, ...konzeptRows.fields],
+  })
+  if (saveError || !importId) {
+    return { status: 'error', message: 'Der Import konnte nicht gespeichert werden.' }
+  }
+
+  // Rohdateien erst NACH dem erfolgreichen, atomaren Speichern hochladen.
+  // Schlaegt NUR dieser Schritt fehl, sind die strukturierten Daten (das,
+  // was der Rest der App tatsaechlich nutzt) bereits vollstaendig und
+  // korrekt gespeichert - nur die redundante Rohdatei-Sicherung fehlt dann,
+  // ein erneuter Import behebt das (kein "error", sondern ein Warn-Hinweis).
   const [journeyUpload, konzeptUpload] = await Promise.all([
     supabase.storage
       .from('imports')
@@ -114,68 +150,16 @@ export async function saveImport(
       .from('imports')
       .upload(konzeptPath, konzeptText, { contentType: 'text/markdown', upsert: true }),
   ])
-  if (journeyUpload.error || konzeptUpload.error) {
-    return { status: 'error', message: 'Die Dateien konnten nicht im Storage gespeichert werden.' }
-  }
-
-  const importRow = {
-    project_id: projectId,
-    journey_file_path: journeyPath,
-    konzept_file_path: konzeptPath,
-    journey_datum: journey.meta.datum,
-    journey_gefuehrt_mit: journey.meta.geführtMit,
-    journey_prompt_version: journey.meta.promptVersion,
-    konzept_datum: konzept.meta.datum,
-    konzept_erstellt_mit: konzept.meta.erstelltMit,
-    imported_at: new Date().toISOString(),
-  }
-
-  let importId: string
-  if (existing) {
-    const { error } = await supabase.from('interview_imports').update(importRow).eq('id', existing.id)
-    if (error) return { status: 'error', message: 'Der Import konnte nicht gespeichert werden.' }
-    importId = existing.id
-    // Re-Import ersetzt die bestehende Struktur vollstaendig (siehe Decision
-    // Log "einfacher Ersatz-Import") - Cascade entfernt Entries/Fields mit.
-    const { error: deleteError } = await supabase
-      .from('import_sections')
-      .delete()
-      .eq('import_id', importId)
-    if (deleteError) {
-      return { status: 'error', message: 'Der bestehende Import konnte nicht ersetzt werden.' }
-    }
-  } else {
-    const { data, error } = await supabase
-      .from('interview_imports')
-      .insert(importRow)
-      .select('id')
-      .single()
-    if (error || !data) return { status: 'error', message: 'Der Import konnte nicht gespeichert werden.' }
-    importId = data.id
-  }
-
-  const journeyRows = flattenParsedDocument(journey, 'journey')
-  const konzeptRows = flattenParsedDocument(konzept, 'konzept')
-  const sectionRows = [...journeyRows.sections, ...konzeptRows.sections].map((s) => ({
-    ...s,
-    import_id: importId,
-  }))
-  const entryRows = [...journeyRows.entries, ...konzeptRows.entries]
-  const fieldRows = [...journeyRows.fields, ...konzeptRows.fields]
-
-  if (sectionRows.length > 0) {
-    const { error } = await supabase.from('import_sections').insert(sectionRows)
-    if (error) return { status: 'error', message: 'Die Struktur konnte nicht gespeichert werden.' }
-  }
-  if (entryRows.length > 0) {
-    const { error } = await supabase.from('import_entries').insert(entryRows)
-    if (error) return { status: 'error', message: 'Die Struktur konnte nicht gespeichert werden.' }
-  }
-  if (fieldRows.length > 0) {
-    const { error } = await supabase.from('import_fields').insert(fieldRows)
-    if (error) return { status: 'error', message: 'Die Struktur konnte nicht gespeichert werden.' }
-  }
 
   revalidatePath(`/kunden/${clientId}/${projectId}`)
+
+  if (journeyUpload.error || konzeptUpload.error) {
+    return {
+      status: 'storage-warning',
+      message:
+        'Der Import wurde vollständig gespeichert, aber die zusätzliche Rohdatei-Sicherung im Storage ist fehlgeschlagen. Ein erneuter Import behebt das.',
+    }
+  }
+
   return { status: 'ok' }
 }
