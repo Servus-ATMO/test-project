@@ -1,8 +1,8 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-27 (QA — zweite Runde, Bugfix verifiziert)
+**Last Updated:** 2026-08-27 (Deploy)
 
 ## Implementierungsnotizen
 - **Bugfix-Runde nach /qa (BUG-1 + BUG-2, 2026-08-27):** `saveImport()` schrieb den strukturierten Speichervorgang bisher als mehrere unabhängige, nicht transaktionale Inserts (BUG-1, High) und konnte bei einem Fehlschlag mitten im Storage-Upload ein verwaistes Rohdatei-Objekt hinterlassen (BUG-2, Low). Fix für beide zusammen: neue Postgres-Funktion `save_interview_import()` (Migration `save_interview_import_atomic`) bündelt Upsert von `interview_imports` (`ON CONFLICT (project_id) DO UPDATE`) + Ersatz-Insert von `import_sections`/`import_entries`/`import_fields` in einer einzigen DB-Transaktion — schlägt irgendein Schritt fehl, rollt Postgres den gesamten Aufruf automatisch zurück. `saveImport()` ruft diese Funktion jetzt zuerst auf und lädt die Rohdateien erst danach in den Storage-Bucket hoch (nicht mehr davor): schlägt der DB-Schritt fehl, wurde noch gar nichts hochgeladen (löst BUG-2 für den DB-Fehlerfall); schlägt nur der Storage-Upload fehl, sind die strukturierten Daten (das, was der Rest der App tatsächlich nutzt) bereits vollständig und korrekt gespeichert — das UI zeigt dafür einen neuen, nicht-blockierenden `storage-warning`-Hinweis statt eines harten Fehlers. Empirisch verifiziert: gezielter Fehlversuch direkt gegen die Funktion (Fremdschlüssel-Verletzung *nachdem* `import_sections` innerhalb desselben Aufrufs bereits geschrieben wurde) hinterlässt nachweislich null Zeilen in `interview_imports` und `import_sections` — Regressionstest dafür in der permanenten Suite (`tests/PROJ-3-import-werkstatt.spec.ts`).
@@ -308,4 +308,13 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 - **Recommendation:** Deploy — Status auf **Approved** gesetzt. Nächster Schritt: `/deploy PROJ-3`.
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-08-27
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Vercel Project:** atmodesign/test-project
+
+Alle drei Migrationen (`create_interview_imports_tables`, `save_interview_import_atomic`, `save_interview_import_atomic_cleanup`) liefen bereits während `/backend`/`/qa` gegen dieselbe Supabase-Instanz, die auch von Produktion genutzt wird (kein separates Staging-Projekt, siehe PROJ-1) — kein zusätzlicher Migrationsschritt beim Deploy nötig. Keine neuen Umgebungsvariablen (kein neuer Dienst, kein neues Secret). Zwei neue npm-Pakete (`unified`, `remark-parse`, `mdast-util-to-string`) über `package.json`/`package-lock.json` bereits im Repo, kein zusätzlicher Setup-Schritt in Vercel nötig.
+
+Live verifiziert nach Deploy: `/login` lädt fehlerfrei (200), ein geschützter Projekt-Pfad (`/kunden/[kundeId]/[projektId]`) leitet unauthentifiziert korrekt mit 307 zu `/login?redirect=...` weiter, Security-Header aktiv (`x-frame-options: DENY`, `strict-transport-security`, `x-content-type-options: nosniff`, `referrer-policy`). Vercel-Build-Log fehlerfrei, alle erwarteten Routen vorhanden (inkl. `/kunden/[kundeId]/[projektId]`), Production-Alias zeigt korrekt auf den neuen Build. Kein Test-Kunde in Produktion angelegt (gleiche Vorsicht wie bei den vorherigen Deploys) — die volle Funktionalität (Upload, Vorschau, Speichern, Re-Import, Löschschutz, BUG-1/BUG-2-Fix) wurde bereits in `/qa` zweimal ausführlich gegen genau diese Supabase-Instanz verifiziert.
+
+PROJ-2-, PROJ-17- und PROJ-3-Regressionssuite (21/21, Chromium) liefen vor dem Push lokal grün gegen dieselbe Datenbank.
