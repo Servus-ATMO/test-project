@@ -1,10 +1,8 @@
 # PROJ-17: Kunden-/Projekt-Verwaltung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25 (BUG-1-Fix)
-
-**Hinweis:** Die Refine-Runde (Lösch-Schutz-Verschärfung: erst archivieren, dann löschen) inkl. BUG-1-Fix (RLS-Policy verschärft) ist vollständig implementiert und QA-geprüft, aber noch **nicht erneut deployt** — der Produktions-Stand entspricht noch der vorherigen Version.
+**Last Updated:** 2026-08-27 (Deploy)
 
 ## Implementierungsnotizen
 - **BUG-1-Fix (2026-08-25):** Migration `enforce_archived_before_delete` — `ALTER POLICY` auf den DELETE-Policies von `clients` und `projects`, von `USING (true)` auf `USING (status = 'archived')`. Die Archivieren-vor-Löschen-Regel gilt damit auch auf Datenbankebene, nicht mehr nur in der Server Action — konsistent mit dem bereits bestehenden `ON DELETE RESTRICT` für die "hat noch Projekte"-Bedingung. Live verifiziert (echter Bypass-Versuch mit normaler Nutzer-Session: vorher `count: 1`/Zeile weg, nachher `count: 0`/Zeile bleibt, nach Archivieren dann `count: 1`/Zeile weg). Als permanenter Regressionstest in `tests/PROJ-17-kunden-projekt-verwaltung.spec.ts` ergänzt (4/4 grün auf Chromium + WebKit). PROJ-2-Regressionssuite weiterhin 12/12, `npm test`/`build`/`lint` unverändert sauber.
@@ -303,3 +301,12 @@ Migration `create_clients_and_projects_tables` lief bereits während `/backend` 
 Live verifiziert nach Deploy: `/login`, `/dashboard` und `/kunden` laden fehlerfrei (200, Security-Header aktiv), `/kunden` ohne Login leitet korrekt mit 307 zu `/login?redirect=...` weiter. Login mit dem bereits bestehenden Arbeits-Account (`servus@atmodesign.de`) gegen Produktion durchgeführt und per Screenshot geprüft: Dashboard-Widget und `/kunden` zeigen beide korrekt den echten Leerzustand ("Noch keine Kunden angelegt") — bestätigt die Live-Verbindung zur Produktions-Datenbank, keine Konsolenfehler. Kein Test-Kunde in Produktion angelegt (gleiche Vorsicht wie beim PROJ-2-Deploy, um die Produktionsdaten nicht zu verschmutzen) — die volle CRUD-Funktionalität wurde bereits in `/qa` gegen dieselbe Supabase-Instanz ausführlich verifiziert.
 
 PROJ-2-Regressionssuite (12/12) und die neue PROJ-17-Suite (3/3, Chromium + WebKit) liefen vor dem Push lokal grün gegen dieselbe Datenbank.
+
+### Nachdeploy: Refine + BUG-1-Fix (2026-08-27)
+
+**Deployed:** 2026-08-27
+**Anlass:** Lösch-Schutz-Verschärfung (erst archivieren, dann löschen) aus der PROJ-3-Spec-Interview, inkl. BUG-1-Fix (RLS-Policy statt nur Server-Action-Prüfung).
+
+Migration `enforce_archived_before_delete` lief bereits während der QA/Backend-Phase gegen dieselbe Supabase-Instanz wie Produktion — beim eigentlichen Deploy also bereits aktiv, kein separater Migrationsschritt nötig. Keine neuen Umgebungsvariablen, keine neuen npm-Pakete.
+
+Live verifiziert nach Deploy: `/login` und `/kunden` laden fehlerfrei (200/307 wie erwartet). Login mit dem bestehenden Arbeits-Account gegen Produktion durchgeführt: Aktionen-Menü eines aktiven Kunden zeigt „Endgültig löschen" korrekt deaktiviert mit dem Tooltip „Muss zuerst archiviert werden…" — bestätigt, dass die neue Regel live greift. Keine Konsolenfehler. Die RLS-Policy selbst wurde zusätzlich direkt per SQL gegen die Produktions-Datenbank geprüft (`USING (status = 'archived')` auf beiden DELETE-Policies). Kein Test-Kunde in Produktion angelegt — die volle Bypass-Verifikation lief bereits in `/qa`/`/backend` gegen dieselbe Supabase-Instanz.
