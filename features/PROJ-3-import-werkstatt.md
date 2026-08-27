@@ -1,8 +1,8 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: In Progress
+## Status: In Review
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-27 (Backend)
+**Last Updated:** 2026-08-27 (QA)
 
 ## Implementierungsnotizen
 - Frontend umgesetzt auf `/kunden/[kundeId]/[projektId]` (ersetzt den PROJ-17-Platzhalter): Upload-Zustand (zwei Drop-Zonen), Vorschau-Zustand (Lücken-Markierung, Format-Warnung, Re-Import-Warnung, Bestätigen/Abbrechen), Lese-Übersicht-Zustand (aufklappbare Sections, "Erneut importieren"). Komponenten in `src/components/imports/`: `upload-zone.tsx`, `parsed-document-view.tsx` (gemeinsamer Renderer für Vorschau UND Übersicht), `import-panel.tsx` (State-Machine, jetzt Server-Actions-basiert statt localStorage — siehe unten).
@@ -189,7 +189,110 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 - Sonst keine neuen Pakete nötig: Datei-Upload läuft über die native Browser-Drag&Drop-/File-API (kein zusätzliches UI-Paket), Formulare/Bestätigungsdialoge nutzen die bereits vorhandenen shadcn/ui-Bausteine (`Alert`, `Dialog`/`AlertDialog`, `Accordion` für die aufklappbare Lese-Übersicht — bereits installiert), `@supabase/ssr` für den Storage-Zugriff auf den `imports`-Bucket ist bereits vorhanden
 
 ## QA Test Results
-_To be added by /qa_
+
+**Tested:** 2026-08-27
+**App URL:** http://localhost:3000
+**Tester:** QA Engineer (AI)
+
+### Vorgehen
+- `npm test` (70 Unit-Tests, alle grün) und `npm run lint` / `npm run build` vor der eigentlichen QA-Runde geprüft.
+- Code-Review aller neuen Dateien (`src/lib/imports/*`, `src/components/imports/*`, Server Actions, Migration).
+- RLS-Policies und GRANTs der vier neuen Tabellen sowie die Storage-Policies des `imports`-Buckets direkt in Supabase geprüft (`pg_policies`, `information_schema.role_table_grants`) — insbesondere wegen der BUG-1-Lektion aus PROJ-17 (RLS muss dieselbe Regel durchsetzen wie die Server Action).
+- Manuelle Red-Team-Exploration im Browser (Format-Vertauschung, Hard-Fail, XSS-Payload in einem Antwortfeld, Dateigrößenlimit).
+- Neue permanente Playwright-Suite `tests/PROJ-3-import-werkstatt.spec.ts` geschrieben und gegen die echte (lokale) Supabase-Instanz ausgeführt, inkl. direkter DB-/Storage-Verifikation nach jedem Speichervorgang.
+- Vollständige Regression: PROJ-2- und PROJ-17-Suiten erneut ausgeführt (Chromium).
+- Mobile-Layout (375px) visuell per Screenshot geprüft (Upload-Zustand + Vorschau-Zustand).
+
+### Acceptance Criteria Status
+
+#### AC-1: Beide Dateien hochladen → Vorschau vor dem Speichern
+- [x] Drag&Drop/Dateiauswahl für beide Slots funktioniert, Vorschau erscheint erst nach „Dateien prüfen", nichts wird vor Bestätigung gespeichert (DB blieb bis zur expliziten Bestätigung leer)
+
+#### AC-2: Nur eine Datei ausgewählt → Import wird verhindert
+- [x] Hinweistext „Bitte auch die Konzept-Datei auswählen…" erscheint, „Dateien prüfen"-Button bleibt deaktiviert, solange nicht beide Dateien gewählt sind
+
+#### AC-3: Keine `.md`-Datei → Ablehnung mit Fehlermeldung
+- [x] `.txt`-Datei wird sofort mit „Nur .md-Dateien werden unterstützt." abgelehnt (clientseitig in `validateFile`)
+
+#### AC-4: Inhaltliche Kreuz-Format-Erkennung → Warnung mit „Trotzdem fortfahren"
+- [x] Journey-Inhalt im Konzept-Slot löst die Warnung „sieht eher wie ein Journey-Transkript aus…" aus, „Trotzdem fortfahren" schaltet frei
+
+#### AC-5: Strukturabweichung → erkannte Teile übernehmen, Rest als Lücke markieren
+- [x] Fehlende „Frage 3"-Antwort wird korrekt als „Lücke — nicht angegeben" markiert, alle anderen Felder des Eintrags bleiben normal sichtbar
+
+#### AC-6: Praktisch keine erkennbare Struktur → Hard-Fail statt leerer Vorschau
+- [x] Reiner Fließtext ohne jede Vorlagen-Struktur wird mit klarer Fehlermeldung abgelehnt, es erscheint keine (fast) leere Vorschau
+
+#### AC-7: Vollständiges granulares Speichern beider Dateien + Rohdateien im Bucket
+- [x] Nach Bestätigung: >5 Sections, >30 Fields in der DB verifiziert (Journey + alle 11 Konzept-Abschnitte), Rohdateien unter `{projectId}/journey-transkript.md` bzw. `/konzept.md` im `imports`-Bucket abrufbar und inhaltlich korrekt
+
+#### AC-8: Post-Import-Lese-Übersicht
+- [x] Nach hartem Reload (nicht nur Client-State) zeigt die Seite die vollständige Journey- und Konzept-Übersicht — bestätigt, dass die Daten aus der DB kommen (Server Component + `getImportForProject`)
+
+#### AC-9: Re-Import mit abhängigen Daten → aktive Bestätigung nötig
+- [ ] **Nicht testbar in dieser Runde** — `hasDependentImportData()` ist bewusst ein Stub (liefert immer `false`, siehe Decision Log), da PROJ-4 noch nicht existiert. UI-Pfad (Warnung + „Trotzdem übernehmen") ist vollständig gebaut und verdrahtet, aber ohne echte abhängige Daten nicht auslösbar. Kein Bug — folgt der bewusst offen gelassenen Erweiterungsstelle.
+
+#### AC-10: Re-Import ohne abhängige Daten → normaler Ersatz-Import
+- [x] Zweiter Import über denselben Import-Datensatz bestätigt (gleiche `interview_imports.id`, gleiche Section-Anzahl nach Ersatz statt Verdopplung), Warnbanner „Der bestehende Import dieses Projekts wird durch diese Version ersetzt." erscheint korrekt
+
+#### AC-11: Fehlerverhalten bei Upload-/Parse-Fehler
+- [~] **Teilweise bestätigt, mit einem Fund** — der Hard-Fail-Pfad (AC-6) verhält sich korrekt (Fehlermeldung, ausgewählte Dateien bleiben erhalten, keine DB-Schreibung). Der mehrstufige Speichervorgang selbst (`saveImport`) ist jedoch **nicht transaktional** — siehe BUG-1 unten. Dieser Teilaspekt der Acceptance Criteria („keine Teildaten übernehmen") ist dadurch nicht in jedem Fehlerfall garantiert.
+
+### Edge Cases Status
+
+#### EC-1: Variable Fragenanzahl (Journey)
+- [x] Test-Fixture mit nur 4 statt 10 Fragen (Frage 1–3 + Frage 10) korrekt geparst, keine falschen Lücken für die fehlenden Zwischenfragen
+
+#### EC-2: Variable Abschnittsanzahl (Seitenstruktur)
+- [x] Test-Fixture mit nur 2 Abschnitten korrekt geparst, „frei-Abschnitte"-Zusammenfassung korrekt als eigener „Zusammenfassung"-Eintrag angehängt, keine Vermischung mit dem letzten Abschnitt (bereits in der Frontend-Phase gefundener und behobener Bug bleibt behoben)
+
+#### EC-3: `[frei]`-Antwortformat
+- [x] Frage 2 mit `[frei] Hauptsächlich über Instagram…` korrekt als vollständiger Antworttext erkannt, nicht als Lücke
+
+#### EC-4: „entfällt"/„keiner" als bewusst leerer Wert
+- [x] „Differenzierung: entfällt" und „Subline: entfällt" korrekt als gefüllter Wert `entfällt` gespeichert, nicht als Lücke markiert — Unterscheidung zu echtem Fehlen funktioniert wie spezifiziert
+
+#### EC-5: Große Dateien (5-MB-Limit)
+- [x] Datei > 5 MB wird clientseitig mit „Die Datei ist größer als 5 MB." abgelehnt (serverseitige Prüfung in `checkImportFiles`/`saveImport` als zweite Absicherung im Code vorhanden, siehe `MAX_TEXT_LENGTH`)
+
+### Security Audit Results
+- [x] Authentication: `/kunden/[kundeId]/[projektId]` ohne Login → Redirect zu `/login?redirect=…` (auch mit Import-Inhalt dahinter)
+- [x] Authorization/RLS: `anon`-Key hat weder SELECT- noch INSERT-Recht auf `interview_imports`, `import_sections`, `import_entries`, `import_fields` (Postgres verweigert bereits auf GRANT-Ebene, Code `42501` — RLS-Policies selbst sind zusätzlich korrekt auf `true` für `authenticated` gesetzt, kein PROJ-17-BUG-1-artiger Gap gefunden)
+- [x] Storage: `imports`-Bucket-Policy ist auf `authenticated` beschränkt (kein `anon`-Zugriff), Bucket ist `public: false`
+- [x] Input validation / XSS: eingeschleuster `<img src=x onerror=alert(1)>`-Payload in einer Journey-Antwort wird beim Rendern der Vorschau/Übersicht als reiner Text angezeigt (React-Escaping in `parsed-document-view.tsx`, kein `dangerouslySetInnerHTML` verwendet), kein echtes `<img>`-Element im DOM
+- [x] Cross-Feature-Zugriffskontrolle: `deleteProject` blockiert korrekt, solange ein Interview-Import existiert (zusätzlich zur `ON DELETE RESTRICT`-Absicherung auf DB-Ebene)
+- [ ] BUG-1 (siehe unten): fehlende Transaktion beim mehrstufigen Speichervorgang — kein Zugriffskontrollproblem, aber eine Datenintegritäts-/Zuverlässigkeitslücke, die im Security-Audit-Sinn als „unvollständige Fehlerbehandlung" zählt
+
+### Regression Testing
+- [x] PROJ-17-Suite (4 Tests, inkl. BUG-1-RLS-Regressionstest): weiterhin grün
+- [x] PROJ-2-Suite (12 Tests): weiterhin grün
+- [x] Gesamt: 20/20 Playwright-Tests grün (Chromium), 70/70 Vitest-Unit-Tests grün, `npm run lint` und `npm run build` sauber
+
+### Bugs Found
+
+#### BUG-1: `saveImport` ist nicht transaktional — ein Fehler mitten im Speichervorgang kann Teildaten dauerhaft in der DB hinterlassen
+- **Severity:** High
+- **Gefunden durch:** Code-Review (nicht empirisch im Browser reproduziert — ein gezielter Fehler-Injektionsversuch über ein kurzzeitiges Entziehen des INSERT-Rechts auf `import_entries` wurde vom Auto-Mode-Classifier als riskante Aktion auf der echten Datenbank blockiert und daher nicht durchgeführt; die Analyse unten basiert auf genauer Lektüre von `src/lib/imports/actions.ts`)
+- **Beschreibung:** `saveImport()` (`src/lib/imports/actions.ts:81-181`) führt den eigentlichen Schreibvorgang als **fünf separate, nicht in einer DB-Transaktion gebündelte Schritte** aus: (1) Storage-Upload beider Rohdateien, (2) Upsert von `interview_imports`, (3) bei Re-Import: Löschen der alten `import_sections` (Cascade räumt Entries/Fields mit auf), (4) Insert von `import_sections`, (5) Insert von `import_entries`, (6) Insert von `import_fields`. Schlägt einer der späteren Schritte fehl (z. B. ein transienter Netzwerk-/DB-Fehler zwischen zwei `await supabase.from(...).insert(...)`-Aufrufen), werden die bereits erfolgreich ausgeführten Schritte **nicht zurückgerollt**. Die Funktion gibt zwar `{ status: 'error', ... }` zurück, aber `interview_imports` und ggf. bereits eingefügte `import_sections`/`import_entries` bleiben in der DB bestehen.
+- **Steps to Reproduce (aus dem Code abgeleitet, nicht live verifiziert):**
+  1. Einen gültigen Import für ein neues Projekt starten und bestätigen
+  2. Angenommen der `import_fields`-Insert (letzter Schritt) schlägt fehl, während `import_sections` und `import_entries` bereits erfolgreich eingefügt wurden
+  3. Erwartet laut AC-11: „keine Teildaten übernommen"
+  4. Tatsächlich: Die Fehlermeldung erscheint im UI, aber `interview_imports`, die zugehörigen `import_sections` und `import_entries` bleiben in der DB bestehen — nur die Felder fehlen. Ein Reload würde eine unvollständige „Lese-Übersicht" zeigen (Abschnitte/Einträge ganz ohne Felder), ohne dass der Fehler noch sichtbar ist
+- **Einschränkend:** Ein erneuter, erfolgreicher Import desselben Projekts repariert den Zustand selbst (Re-Import-Pfad löscht `import_sections` per Cascade und schreibt sauber neu) — der Fehler ist also nicht dauerhaft unreparierbar, aber zwischen dem Fehlschlag und einem manuellen erneuten Import zeigt die Anwendung einen stillen, unvollständigen Datenstand ohne erkennbaren Hinweis darauf.
+- **Priority:** Fix before deployment (verletzt eine explizite Acceptance Criteria; Datenintegrität)
+
+#### BUG-2: Storage-Uploads können bei partiellem Fehlschlag eine verwaiste Rohdatei hinterlassen
+- **Severity:** Low
+- **Beschreibung:** In `saveImport()` laufen die beiden Storage-Uploads parallel per `Promise.all`. Schlägt nur einer der beiden fehl, wurde der andere bereits erfolgreich hochgeladen/überschrieben, obwohl die Funktion insgesamt einen Fehler zurückgibt und keine DB-Zeile anlegt. Die hochgeladene Datei ist dann ein harmloses Waisenobjekt im `imports`-Bucket (wird bei einem späteren erfolgreichen Speichervorgang für dasselbe Projekt automatisch überschrieben, `upsert: true`) — kein Sicherheits- oder Sichtbarkeitsproblem, da die UI Storage-Inhalte nie direkt aus dem Bucket lädt, sondern ausschließlich über die DB-Struktur.
+- **Priority:** Nice to have
+
+### Summary
+- **Acceptance Criteria:** 9/11 vollständig bestanden, 1 bewusst nicht testbar (AC-9, Stub-Abhängigkeit von PROJ-4), 1 teilweise bestanden mit Fund (AC-11 / BUG-1)
+- **Bugs Found:** 2 total (1 High, 1 Low)
+- **Security:** Pass — RLS/GRANTs/Storage-Policies korrekt, kein PROJ-17-BUG-1-artiger Gap, XSS-sicher, Auth/Cross-Feature-Zugriffskontrolle korrekt. BUG-1 ist ein Datenintegritäts-, kein Zugriffskontrollproblem.
+- **Production Ready:** NO
+- **Recommendation:** BUG-1 vor Deploy beheben (`saveImport` transaktional machen, z. B. über eine Postgres-Funktion/RPC, die alle Schritte in einer einzigen DB-Transaktion ausführt) — betrifft die Kernzusicherung des Features („kein Teil-Speichern bei Fehlern"). BUG-2 kann optional mitgenommen werden, ist aber nicht blockierend.
 
 ## Deployment
 _To be added by /deploy_
