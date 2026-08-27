@@ -1,8 +1,19 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: Architected
+## Status: In Progress
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-27 (Architektur)
+**Last Updated:** 2026-08-27 (Frontend)
+
+## Implementierungsnotizen
+- Frontend umgesetzt auf `/kunden/[kundeId]/[projektId]` (ersetzt den PROJ-17-Platzhalter): Upload-Zustand (zwei Drop-Zonen), Vorschau-Zustand (Lücken-Markierung, Format-Warnung, Re-Import-Warnung, Bestätigen/Abbrechen), Lese-Übersicht-Zustand (aufklappbare Sections, "Erneut importieren"). Komponenten in `src/components/imports/`: `upload-zone.tsx`, `parsed-document-view.tsx` (gemeinsamer Renderer für Vorschau UND Übersicht), `import-panel.tsx` (State-Machine).
+- **Parsing (Journey + Konzept) als eigene Bibliothek in `src/lib/imports/`:** `parse-utils.ts` (gemeinsame Extraktions-Engine für alle Feld-Schreibweisen der Vorlagen: `**Label:** Wert`, `- **Label:** Wert`, `N. **Label:** Wert`, `*Label:* Wert`, `**Frage ohne Doppelpunkt?**`), `parse-journey.ts`, `parse-konzept.ts`, `format-detect.ts` (Datei-Validierung + Format-Kreuz-Erkennung). Deckt alle elf Konzept-Abschnitte und alle Journey-Fragen granular ab, inkl. der unregelmäßig geformten Abschnitte (Leitidee, Seitenstruktur mit variabler Abschnittszahl + frei-Abschnitte-Zusammenfassung, Platzhalter & offene Punkte, Testhypothesen).
+- **Wichtige Einschränkung, bewusst so:** Dieser Parser ist zeilen-/regex-basiert, nicht der im Tech Design vorgesehene robustere Markdown-Parser (remark/unified). Er ist eine funktionierende Zwischenlösung für die Frontend-Phase (damit die UI echt getestet werden kann), soll aber in `/backend` durch die robustere, serverseitige Implementierung ersetzt werden — siehe Tech Design "Neue Abhängigkeit: Markdown-Parsing-Paket".
+- Datenhaltung vorübergehend über `localStorage` (Hook `src/hooks/useImport.ts`, ein Import-Datensatz pro Projekt-ID) statt Supabase — analog zum bereits etablierten Muster aus PROJ-17s Frontend-Phase. `hasDependentData()` ist als Stub angelegt (liefert aktuell immer `false`, siehe Tech Design), das Re-Import-Warnungs-UI ist aber bereits vollständig verdrahtet und wartet nur auf eine echte Bedingung aus PROJ-4.
+- 40 Unit-Tests für die Parsing-Bibliothek (`src/lib/imports/*.test.ts`), decken beide Vorlagenformate mit realistischen Beispieldaten ab (gefundene Felder, Lücken, `[frei]`-Antworten, variable Fragen-/Abschnittszahl, `entfällt`-Werte als gültige Nicht-Lücke).
+- **Beim Testen im Browser zwei echte Bugs gefunden und behoben** (Playwright, mit selbst erstellten Beispieldateien basierend auf den Referenzvorlagen, danach wieder entfernt):
+  1. Die „frei-Abschnitte"-Zusammenfassung aus Abschnitt 4 stand außerhalb jedes einzelnen „### Abschnitt"-Blocks, landete beim Parsen aber trotzdem als Zusatzfeld im letzten Abschnitt UND zusätzlich in der eigens dafür vorgesehenen „Zusammenfassung"-Eintrag — doppelt. Fix: die Zeile wird vor dem Aufteilen in Abschnitte abgetrennt. Regressionstest ergänzt.
+  2. Beim Vertauschen der beiden Dateien (Konzept in den Journey-Slot, umgekehrt) griff zuerst der „keine erkennbare Struktur"-Hard-Fail statt der freundlicheren Format-Kreuz-Warnung mit „Trotzdem fortfahren" — obwohl die Datei durchaus eine erkennbare Struktur hat, nur für den jeweils anderen Slot. Fix: der Hard-Fail greift nur noch, wenn eine Datei WEDER zu ihrem eigenen Slot NOCH zum jeweils anderen Format passt.
+- Vollständiger Durchlauf im Browser verifiziert (Chromium + Mobile Safari/WebKit): Upload-Validierung (nur `.md`, nur eine Datei ausgewählt, Kreuz-Format-Warnung), Vorschau mit Lücken-Markierung, Bestätigen → Übersicht, Persistenz über Reload, Re-Import mit und ohne Format-Warnung, Hard-Fail bei unerkennbarer Struktur — keine Konsolenfehler. PROJ-2- und PROJ-17-Regressionssuiten weiterhin grün (12/12 bzw. 4/4).
 
 ## Dependencies
 - Requires: PROJ-1 (Supabase Infrastructure Setup) — Storage-Buckets `imports`/`exports`
@@ -91,6 +102,8 @@
 | „Hat abhängige Daten"-Prüfung beim Re-Import als eigenständige, erweiterbare Funktion angelegt (liefert aktuell immer „nein", da PROJ-4 noch nicht existiert) | Analog zum bereits etablierten Muster aus PROJ-17s Lösch-Schutzprüfung — spätere Features (PROJ-4) ergänzen dort einfach ihre eigene Bedingung, ohne den Re-Import-Ablauf neu zu entwerfen | 2026-08-27 |
 | Re-Import ersetzt die bestehenden Abschnitte/Einträge/Felder des Projekts vollständig (keine parallele Versionierung) | Deckt sich mit der Product Decision „einfacher Ersatz-Import"; eine Versionshistorie ist nicht verlangt | 2026-08-27 |
 | Neue Abhängigkeit: ein schlankes Markdown-Parsing-Paket (z. B. aus dem `remark`/`unified`-Ökosystem) statt handgeschriebener Regex-Auswertung | Das Parsen ist der Kern dieses gesamten Features und läuft gegen KI-generierten, nicht hundertprozentig deterministischen Text — ein echter Markdown-Parser (Überschriften, Fett-Text, Listen als Struktur statt Text) ist robuster gegen kleinere Formatabweichungen als Zeilen-Regex | 2026-08-27 |
+| **[Frontend]** Zeilen-/Regex-basierter Parser (`src/lib/imports/`) als Zwischenlösung statt sofort der finalen `remark`/`unified`-Implementierung | Analog zum PROJ-17-Muster: eine echte, funktionierende (wenn auch nicht die finale) Implementierung ermöglicht es, die komplette UI im Browser zu testen, statt gegen Mock-Daten zu bauen; `/backend` ersetzt nur die Parsing-Bibliothek, die Section/Eintrag/Feld-Datenstruktur bleibt gleich | 2026-08-27 |
+| **[Frontend]** `hasDependentData()` als Stub (liefert immer `false`), Re-Import-Warnungs-UI aber bereits vollständig gebaut | Gleiches erweiterbares Muster wie PROJ-17s Lösch-Schutzprüfung — PROJ-4 muss später nur die Bedingung selbst implementieren, nicht die UI drumherum | 2026-08-27 |
 
 ---
 <!-- Sections below are added by subsequent skills -->

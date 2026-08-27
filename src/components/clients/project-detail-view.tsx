@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ProjectFormDialog } from './project-form-dialog'
+import { ImportPanel } from '@/components/imports/import-panel'
 import type { Client, Project } from '@/lib/clients/types'
 
 interface ProjectDetailViewProps {
@@ -47,12 +47,7 @@ export function ProjectDetailView({ client, project }: ProjectDetailViewProps) {
         )}
       </Card>
 
-      <Alert>
-        <AlertDescription>
-          Interview-Import, Konzept-Graph und Wireframe folgen mit PROJ-3 ff. Diese Seite ist
-          bereits der spätere Einstiegspunkt dafür.
-        </AlertDescription>
-      </Alert>
+      <ImportPanel projectId={project.id} />
     </div>
   )
 }

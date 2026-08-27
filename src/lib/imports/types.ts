@@ -1,0 +1,47 @@
+export type FieldStatus = 'found' | 'gap'
+
+export interface ImportField {
+  id: string
+  name: string
+  value: string
+  status: FieldStatus
+}
+
+export interface ImportEntry {
+  id: string
+  label: string
+  fields: ImportField[]
+}
+
+export interface ImportSection {
+  id: string
+  document: 'journey' | 'konzept'
+  name: string
+  entries: ImportEntry[]
+}
+
+export interface JourneyMeta {
+  datum: string
+  geführtMit: string
+  promptVersion: string
+}
+
+export interface KonzeptMeta {
+  datum: string
+  erstelltMit: string
+}
+
+export interface ParsedDocument {
+  sections: ImportSection[]
+  hasRecognizableStructure: boolean
+}
+
+export interface ParsedImport {
+  journey: ParsedDocument & { meta: JourneyMeta }
+  konzept: ParsedDocument & { meta: KonzeptMeta }
+}
+
+export interface FormatWarning {
+  slot: 'journey' | 'konzept'
+  message: string
+}
