@@ -1,8 +1,8 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: Planned
+## Status: Architected
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-25
+**Last Updated:** 2026-08-27 (Architektur)
 
 ## Dependencies
 - Requires: PROJ-1 (Supabase Infrastructure Setup) — Storage-Buckets `imports`/`exports`
@@ -53,9 +53,10 @@
 - Speicherung: Rohdateien im bestehenden `imports`-Bucket (siehe PROJ-1), zusätzlich vollständig strukturiertes Parsing beider Dateien in die Datenbank
 
 ## Open Questions
-- [ ] Genaue Dateigrößen-Obergrenze pro Datei — wird bei `/architecture` festgelegt (Tendenz: einige MB, großzügig, da reiner Text)
-- [ ] Exaktes Datenmodell/Tabellenstruktur für die granularen Felder — Aufgabe von `/architecture`
-- [ ] Lösch-Schutz-Verschärfung (Kunde/Projekt mit Import muss erst archiviert werden, bevor endgültiges Löschen möglich ist) wird **nicht** in PROJ-3 implementiert, sondern per `/refine PROJ-17` an der bereits deployten Funktion nachgezogen — siehe Decision Log
+- [x] ~~Genaue Dateigrößen-Obergrenze pro Datei~~ — bei `/architecture` auf 5 MB je Datei festgelegt, siehe Tech Design
+- [x] ~~Exaktes Datenmodell/Tabellenstruktur für die granularen Felder~~ — bei `/architecture` als vierstufiges Modell (Import → Abschnitt → Eintrag → Feld) festgelegt, siehe Tech Design
+- [x] ~~Lösch-Schutz-Verschärfung~~ — wurde zwischenzeitlich per `/refine PROJ-17` + `/backend PROJ-17` umgesetzt und deployt (Kunde/Projekt muss erst archiviert sein, bevor endgültiges Löschen möglich ist)
+- [ ] Wie sich ein Re-Import auf bereits bestehende Ebene-2-Daten (PROJ-4) auswirkt (löschen vs. als veraltet markieren) — kann erst entschieden werden, wenn PROJ-4 sein eigenes Datenmodell hat; die „hat abhängige Daten"-Prüfung in PROJ-3 ist bewusst als erweiterbarer Baustein angelegt (siehe Tech Design), analog zum bereits etablierten Muster aus PROJ-17
 
 ## Decision Log
 
@@ -81,13 +82,86 @@
 <!-- Added by /architecture -->
 | Decision | Rationale | Date |
 |----------|-----------|------|
-| _Example: localStorage over Supabase_ | _No user accounts needed; data is device-local_ | YYYY-MM-DD |
+| Vierstufiges Datenmodell (Import → Abschnitt → Eintrag → Feld) statt einer eigenen Tabellenstruktur pro Konzept-Abschnitt | Die elf Konzept-Abschnitte + die Journey-Fragen haben sehr unterschiedliche Formen (einmalig vs. wiederholend, 2–10 Felder je Eintrag) — ein einheitliches, generisches Modell bildet alle ab, ohne dass jeder neue Abschnittstyp eine Schema-Änderung braucht | 2026-08-27 |
+| Parsing als einzelne, reine Server-Funktion, zweimal aufgerufen (einmal für die Vorschau, einmal beim endgültigen Speichern) | Stellt sicher, dass exakt das gespeichert wird, was in der Vorschau zu sehen war — kein geparster Zwischenzustand muss vom Client zurück zum Server transportiert werden, und es gibt nur eine Stelle mit Parsing-Logik | 2026-08-27 |
+| Journey-„Optionen" (A–F) werden als ein Feld mit dem vollständigen Listentext gespeichert, nicht als einzelne Unter-Felder pro Buchstabe | Optionen folgen nicht dem `**Label:** Wert`-Muster der granularen Felder, sondern sind reine Kontextinformation zur Antwort; niemand referenziert später eine einzelne Option isoliert | 2026-08-27 |
+| „Antwort" bleibt ein Feld mit dem vollständigen Rohtext (inkl. Buchstaben bzw. `[frei]`-Kennzeichnung), keine weitere Aufsplittung in Antworttyp + Antworttext | Deckt sich mit dem in der Spec festgelegten Granularitätsgrad; eine weitere Zerlegung kann bei Bedarf ein späteres Feature (PROJ-4/PROJ-6) selbst vornehmen | 2026-08-27 |
+| Dateigrößen-Limit: 5 MB pro Datei | Großzügig für reinen Text (ein sehr langes Interview bleibt weit darunter), verhindert trotzdem versehentliche/missbräuchliche Uploads | 2026-08-27 |
+| Format-Kreuz-Erkennung über das Vorhandensein format-typischer Überschriften (z. B. „### Frage N" vs. „### Abschnitt N") | Einfache, robuste Heuristik statt komplexer Inhaltsanalyse — die beiden Vorlagen unterscheiden sich strukturell klar genug | 2026-08-27 |
+| „Hat abhängige Daten"-Prüfung beim Re-Import als eigenständige, erweiterbare Funktion angelegt (liefert aktuell immer „nein", da PROJ-4 noch nicht existiert) | Analog zum bereits etablierten Muster aus PROJ-17s Lösch-Schutzprüfung — spätere Features (PROJ-4) ergänzen dort einfach ihre eigene Bedingung, ohne den Re-Import-Ablauf neu zu entwerfen | 2026-08-27 |
+| Re-Import ersetzt die bestehenden Abschnitte/Einträge/Felder des Projekts vollständig (keine parallele Versionierung) | Deckt sich mit der Product Decision „einfacher Ersatz-Import"; eine Versionshistorie ist nicht verlangt | 2026-08-27 |
+| Neue Abhängigkeit: ein schlankes Markdown-Parsing-Paket (z. B. aus dem `remark`/`unified`-Ökosystem) statt handgeschriebener Regex-Auswertung | Das Parsen ist der Kern dieses gesamten Features und läuft gegen KI-generierten, nicht hundertprozentig deterministischen Text — ein echter Markdown-Parser (Überschriften, Fett-Text, Listen als Struktur statt Text) ist robuster gegen kleinere Formatabweichungen als Zeilen-Regex | 2026-08-27 |
 
 ---
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### A) Komponenten-Struktur (visueller Baum)
+
+```
+Projekt-Detail-Seite (/kunden/[kundeId]/[projektId], ersetzt den PROJ-17-Platzhalter)
+├── Projekt-Stammdaten-Karte (bestehend aus PROJ-17, unverändert)
+└── Import-Bereich (neuer Inhalt anstelle des "Interview-Import folgt in PROJ-3"-Hinweises)
+    │
+    ├── Zustand "Kein Import vorhanden"
+    │   ├── Upload-Zone "Journey-Transkript" (Drag & Drop + Dateiauswahl)
+    │   ├── Upload-Zone "Konzept" (Drag & Drop + Dateiauswahl)
+    │   └── "Dateien prüfen"-Button (aktiv erst, wenn beide Dateien gewählt sind)
+    │
+    ├── Zustand "Vorschau" (nach Dateiprüfung, vor endgültiger Übernahme)
+    │   ├── Format-Warnung (falls eine Datei eher wie das jeweils andere Dokument aussieht)
+    │   ├── Journey-Vorschau: Liste aller erkannten Fragen mit Antwort, Lücken deutlich markiert
+    │   ├── Konzept-Vorschau: Liste aller erkannten Abschnitte mit ihren Feldern, Lücken markiert
+    │   ├── Re-Import-Warnung (nur falls bereits ein Import mit abhängigen Daten existiert)
+    │   └── "Import übernehmen" / "Abbrechen"
+    │
+    └── Zustand "Import vorhanden" (Lese-Übersicht)
+        ├── Journey-Übersicht (aufklappbare Fragen-Liste)
+        ├── Konzept-Übersicht (aufklappbare Abschnitte-Liste mit Feldern)
+        └── "Erneut importieren"-Button (führt zurück zum Upload-Zustand)
+```
+
+### B) Datenmodell (in einfacher Sprache)
+
+Vier Ebenen, die zusammen sowohl die Journey-Fragen als auch alle elf Konzept-Abschnitte einheitlich abbilden:
+
+**Import** — ein Datensatz pro Projekt (ein Re-Import ersetzt den bestehenden, statt einen zweiten anzulegen):
+- Eindeutige ID, Verknüpfung zum Projekt
+- Verweise auf die beiden Rohdateien im `imports`-Bucket (siehe PROJ-1)
+- Kopf-Metadaten aus den Dateien (Datum, Geführt-mit/Erstellt-mit, Prompt-Version)
+- Importiert-Zeitstempel
+
+**Abschnitt** — ein Eintrag pro erkanntem Bereich einer der beiden Dateien (z. B. "Einstieg", "Phase 1–3", "Strategisches Fundament", "Seitenstruktur"):
+- Eindeutige ID, Verknüpfung zum Import
+- Dokument (Journey-Transkript oder Konzept), Name, Reihenfolge (wie im Original)
+
+**Eintrag** — ein oder mehrere pro Abschnitt: genau einer bei einmaligen Abschnitten (z. B. "Strategisches Fundament"), mehrere bei wiederholenden Abschnitten (je eine Frage, je ein Seitenstruktur-Abschnitt, je eine Testhypothese, je ein Platzhalter-Punkt):
+- Eindeutige ID, Verknüpfung zum Abschnitt
+- Bezeichnung (z. B. "Frage 3", "Abschnitt 2: Hero" — leer bei einmaligen Abschnitten), Reihenfolge
+
+**Feld** — jedes einzelne benannte Feld innerhalb eines Eintrags (z. B. "Zielgruppe", "Antwort", "Baustein", "CTA"):
+- Eindeutige ID, Verknüpfung zum Eintrag
+- Feldname, Wert (Freitext, kann bei Listen wie „Optionen" oder „Wichtigste Benefits" auch mehrzeilig sein)
+- Status: gefunden oder Lücke (fehlt in der Quelldatei — unterscheidet sich von einem bewusst leeren Wert wie „entfällt"/„keiner")
+- Reihenfolge
+
+Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: wie bei PROJ-17, alle eingeloggten Mitarbeiter sehen und bearbeiten alles (Shared Visibility).
+
+**Wichtig — was hier NICHT entschieden wird:** Ob und wie ein Re-Import bestehende Ebene-2-Daten aus PROJ-4 betrifft, kann erst PROJ-4 selbst festlegen (eigene Tabellen, eigene Verknüpfung). Die „hat abhängige Daten"-Prüfung ist bewusst als eigenständiger, erweiterbarer Baustein angelegt (siehe unten), genau wie schon bei PROJ-17.
+
+### C) Tech-Entscheidungen (Begründung)
+
+- **Vier-Ebenen-Modell statt einer Tabelle pro Abschnittstyp:** Die elf Konzept-Abschnitte und die Journey-Fragen sind strukturell zu unterschiedlich (einmalig/wiederholend, 2–10 Felder), um sinnvoll in feste Spalten zu pressen — ein generisches Modell bildet alles ab und bleibt erweiterbar, falls sich die Vorlagen künftig ändern.
+- **Parsing als eine einzige Server-Funktion, zweimal aufgerufen:** Die Vorschau und der endgültige Speichervorgang nutzen exakt dieselbe Logik — was der Nutzer in der Vorschau sieht, ist garantiert das, was gespeichert wird, ohne einen fehleranfälligen Zwischentransport der bereits geparsten Daten durchs Frontend.
+- **Markdown-Parser statt Regex:** Da dieses Parsing der Kern des gesamten Features ist und gegen von einer KI erzeugten (nicht immer hundertprozentig identisch formatierten) Text läuft, ist ein echter Markdown-Parser robuster als handgeschriebene Zeilen-Muster.
+- **Erweiterbare „hat abhängige Daten"-Prüfung:** Verhindert, dass PROJ-4 später den gesamten Re-Import-Ablauf neu entwerfen muss — es ergänzt nur seine eigene Bedingung, genau wie bei PROJ-17s Lösch-Schutzprüfung.
+- **5-MB-Limit pro Datei:** Rein zur Missbrauchsvermeidung, da es sich um Textdateien handelt und selbst sehr lange Interviews deutlich darunterbleiben.
+
+### D) Abhängigkeiten (Pakete)
+
+- Ein schlankes Markdown-Parsing-Paket (z. B. aus dem `remark`/`unified`-Ökosystem) — neue Abhängigkeit, Begründung siehe oben
+- Sonst keine neuen Pakete nötig: Datei-Upload läuft über die native Browser-Drag&Drop-/File-API (kein zusätzliches UI-Paket), Formulare/Bestätigungsdialoge nutzen die bereits vorhandenen shadcn/ui-Bausteine (`Alert`, `Dialog`/`AlertDialog`, `Accordion` für die aufklappbare Lese-Übersicht — bereits installiert), `@supabase/ssr` für den Storage-Zugriff auf den `imports`-Bucket ist bereits vorhanden
 
 ## QA Test Results
 _To be added by /qa_
