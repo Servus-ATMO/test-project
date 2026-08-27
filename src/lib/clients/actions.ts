@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth } from '@/lib/auth/require-auth'
 import { clientSchema, projectSchema } from '@/lib/validations/clients'
 import type { EntityStatus } from './types'
 
@@ -16,20 +16,6 @@ export interface DeleteResult {
 export type CreateClientResult =
   | { status: 'duplicate'; existingCompanyName: string }
   | { status: 'error'; error: string }
-
-// Server Actions laufen zwar bereits hinter dem geschuetzten Layout
-// (src/app/(protected)/layout.tsx redirect't bei fehlender Session), Server
-// Actions sind aber eigene Endpunkte und werden hier zusaetzlich abgesichert
-// (Defense in Depth, siehe .claude/rules/backend.md "Always check
-// authentication"). RLS (siehe Migration) ist die dritte, unabhaengige Ebene.
-async function requireAuth() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  if (!data?.claims) {
-    redirect('/login')
-  }
-  return supabase
-}
 
 export async function createClientAndFirstProject(
   values: unknown,
@@ -244,6 +230,20 @@ export async function deleteProject(id: string, clientId: string): Promise<Delet
     return {
       ok: false,
       reason: 'Das Projekt muss zuerst archiviert werden, bevor es endgültig gelöscht werden kann.',
+    }
+  }
+
+  // Erweiterung aus PROJ-3 (Import-Werkstatt): ein Projekt mit abgeschlossenem
+  // Interview-Import gilt als "hat abhängige Daten" - siehe PROJ-17 Tech
+  // Design "Lösch-Schutzprüfung" (bewusst als erweiterbarer Baustein angelegt).
+  const { count: importCount } = await supabase
+    .from('interview_imports')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', id)
+  if ((importCount ?? 0) > 0) {
+    return {
+      ok: false,
+      reason: 'Dieses Projekt hat einen Interview-Import — endgültiges Löschen ist nicht möglich.',
     }
   }
 

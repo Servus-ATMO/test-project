@@ -1,29 +1,38 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { UploadZone } from './upload-zone'
 import { ParsedDocumentView } from './parsed-document-view'
-import { useImport } from '@/hooks/useImport'
-import { checkCrossFormat, validateFile } from '@/lib/imports/format-detect'
+import { checkImportFiles, saveImport } from '@/lib/imports/actions'
+import { validateFile } from '@/lib/imports/format-detect'
 import type { FormatWarning, ParsedImport } from '@/lib/imports/types'
 
-export function ImportPanel({ projectId }: { projectId: string }) {
-  const { parsedImport, loaded, parsePreview, saveImport, hasDependentData } = useImport(projectId)
+interface ImportPanelProps {
+  clientId: string
+  projectId: string
+  initialImport: ParsedImport | null
+}
+
+export function ImportPanel({ clientId, projectId, initialImport }: ImportPanelProps) {
+  const router = useRouter()
 
   const [journeyFile, setJourneyFile] = useState<File | null>(null)
   const [konzeptFile, setKonzeptFile] = useState<File | null>(null)
   const [journeyError, setJourneyError] = useState<string | null>(null)
   const [konzeptError, setKonzeptError] = useState<string | null>(null)
+  const [fileTexts, setFileTexts] = useState<{ journey: string; konzept: string } | null>(null)
   const [preview, setPreview] = useState<ParsedImport | null>(null)
   const [formatWarnings, setFormatWarnings] = useState<FormatWarning[]>([])
   const [warningsAcknowledged, setWarningsAcknowledged] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [dependentDataWarning, setDependentDataWarning] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
-
-  if (!loaded) return null
 
   const handleFileSelected = (slot: 'journey' | 'konzept', file: File | null) => {
     if (slot === 'journey') {
@@ -43,31 +52,18 @@ export function ImportPanel({ projectId }: { projectId: string }) {
         journeyFile.text(),
         konzeptFile.text(),
       ])
+      const result = await checkImportFiles(journeyText, konzeptText)
 
-      const result = parsePreview(journeyText, konzeptText)
-      const journeyWarning = checkCrossFormat('journey', journeyText)
-      const konzeptWarning = checkCrossFormat('konzept', konzeptText)
-
-      // Ein Hard-Fail ("keine erkennbare Struktur") gilt nur, wenn eine Datei
-      // WEDER zu ihrem eigenen Slot noch zum jeweils anderen Format passt -
-      // sieht sie eher wie das andere Dokument aus, hat sie durchaus eine
-      // erkennbare Struktur (nur fuer den falschen Slot) und bekommt
-      // stattdessen die Format-Warnung mit "Trotzdem fortfahren"-Option.
-      if (!result.journey.hasRecognizableStructure && !journeyWarning) {
-        setJourneyError('In dieser Datei wurde praktisch keine erkennbare Struktur gefunden.')
-        return
-      }
-      if (!result.konzept.hasRecognizableStructure && !konzeptWarning) {
-        setKonzeptError('In dieser Datei wurde praktisch keine erkennbare Struktur gefunden.')
+      if (result.status === 'error') {
+        if (result.slot === 'journey') setJourneyError(result.message)
+        else setKonzeptError(result.message)
         return
       }
 
-      const warnings: FormatWarning[] = []
-      if (journeyWarning) warnings.push(journeyWarning)
-      if (konzeptWarning) warnings.push(konzeptWarning)
-      setFormatWarnings(warnings)
+      setFileTexts({ journey: journeyText, konzept: konzeptText })
+      setFormatWarnings(result.warnings)
       setWarningsAcknowledged(false)
-      setPreview(result)
+      setPreview(result.preview)
     } finally {
       setChecking(false)
     }
@@ -75,25 +71,50 @@ export function ImportPanel({ projectId }: { projectId: string }) {
 
   const handleCancel = () => {
     setPreview(null)
+    setFileTexts(null)
     setFormatWarnings([])
     setWarningsAcknowledged(false)
+    setSaveError(null)
+    setDependentDataWarning(null)
   }
 
-  const handleConfirm = () => {
-    if (!preview) return
-    saveImport(preview)
-    setPreview(null)
-    setJourneyFile(null)
-    setKonzeptFile(null)
-    setFormatWarnings([])
-    setWarningsAcknowledged(false)
-    setShowUpload(false)
+  const handleConfirm = async (acknowledgeDependentData = false) => {
+    if (!fileTexts) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const result = await saveImport(
+        clientId,
+        projectId,
+        fileTexts.journey,
+        fileTexts.konzept,
+        acknowledgeDependentData
+      )
+      if (result.status === 'dependent-data') {
+        setDependentDataWarning(result.message)
+        return
+      }
+      if (result.status === 'error') {
+        setSaveError(result.message)
+        return
+      }
+      setPreview(null)
+      setFileTexts(null)
+      setJourneyFile(null)
+      setKonzeptFile(null)
+      setFormatWarnings([])
+      setWarningsAcknowledged(false)
+      setDependentDataWarning(null)
+      setShowUpload(false)
+      router.refresh()
+    } finally {
+      setSaving(false)
+    }
   }
 
   // --- Zustand "Vorschau" ---
   if (preview) {
-    const isReImport = parsedImport !== null
-    const dependentDataAtRisk = isReImport && hasDependentData(projectId)
+    const isReImport = initialImport !== null
     const hasUnacknowledgedFormatWarnings = formatWarnings.length > 0 && !warningsAcknowledged
 
     return (
@@ -116,41 +137,66 @@ export function ImportPanel({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <>
-            {isReImport && (
-              <Alert variant={dependentDataAtRisk ? 'destructive' : 'default'}>
-                <AlertTitle>Erneuter Import</AlertTitle>
-                <AlertDescription>
-                  {dependentDataAtRisk
-                    ? 'Für dieses Projekt existieren bereits abhängige Daten (z. B. Ebene-2-Anreicherung). Diese werden beim Übernehmen ungültig bzw. überschrieben.'
-                    : 'Der bestehende Import dieses Projekts wird durch diese Version ersetzt.'}
-                </AlertDescription>
+            {saveError && (
+              <Alert variant="destructive">
+                <AlertDescription>{saveError}</AlertDescription>
               </Alert>
             )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Journey-Transkript</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ParsedDocumentView document={preview.journey} />
-              </CardContent>
-            </Card>
+            {dependentDataWarning ? (
+              <>
+                <Alert variant="destructive">
+                  <AlertTitle>Erneuter Import</AlertTitle>
+                  <AlertDescription>{dependentDataWarning}</AlertDescription>
+                </Alert>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleCancel} disabled={saving}>
+                    Abbrechen
+                  </Button>
+                  <Button onClick={() => handleConfirm(true)} disabled={saving}>
+                    {saving ? 'Wird übernommen…' : 'Trotzdem übernehmen'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                {isReImport && (
+                  <Alert>
+                    <AlertTitle>Erneuter Import</AlertTitle>
+                    <AlertDescription>
+                      Der bestehende Import dieses Projekts wird durch diese Version ersetzt.
+                    </AlertDescription>
+                  </Alert>
+                )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Konzept</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ParsedDocumentView document={preview.konzept} />
-              </CardContent>
-            </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Journey-Transkript</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ParsedDocumentView document={preview.journey} />
+                  </CardContent>
+                </Card>
 
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleCancel}>
-                Abbrechen
-              </Button>
-              <Button onClick={handleConfirm}>Import übernehmen</Button>
-            </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Konzept</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ParsedDocumentView document={preview.konzept} />
+                  </CardContent>
+                </Card>
+
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleCancel} disabled={saving}>
+                    Abbrechen
+                  </Button>
+                  <Button onClick={() => handleConfirm(false)} disabled={saving}>
+                    {saving ? 'Wird übernommen…' : 'Import übernehmen'}
+                  </Button>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -158,7 +204,7 @@ export function ImportPanel({ projectId }: { projectId: string }) {
   }
 
   // --- Zustand "Lese-Uebersicht" (Import vorhanden, kein Re-Import gestartet) ---
-  if (parsedImport && !showUpload) {
+  if (initialImport && !showUpload) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -173,7 +219,7 @@ export function ImportPanel({ projectId }: { projectId: string }) {
             <CardTitle className="text-base">Journey-Transkript</CardTitle>
           </CardHeader>
           <CardContent>
-            <ParsedDocumentView document={parsedImport.journey} />
+            <ParsedDocumentView document={initialImport.journey} />
           </CardContent>
         </Card>
 
@@ -182,7 +228,7 @@ export function ImportPanel({ projectId }: { projectId: string }) {
             <CardTitle className="text-base">Konzept</CardTitle>
           </CardHeader>
           <CardContent>
-            <ParsedDocumentView document={parsedImport.konzept} />
+            <ParsedDocumentView document={initialImport.konzept} />
           </CardContent>
         </Card>
       </div>
@@ -224,7 +270,7 @@ export function ImportPanel({ projectId }: { projectId: string }) {
         <Button onClick={handleCheck} disabled={!canCheck || checking}>
           {checking ? 'Dateien werden geprüft…' : 'Dateien prüfen'}
         </Button>
-        {parsedImport && showUpload && (
+        {initialImport && showUpload && (
           <Button variant="outline" onClick={() => setShowUpload(false)}>
             Abbrechen
           </Button>

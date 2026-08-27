@@ -1,4 +1,5 @@
 import { makeId, buildFields, extractLabeledFields, splitByHeadingLevel } from './parse-utils'
+import { normalizeMarkdown } from './normalize-markdown'
 import type { ImportEntry, ImportSection, JourneyMeta, ParsedDocument } from './types'
 
 // Nur "Gestellt" und "Antwort" gelten als zwingend erwartet - "Optionen"
@@ -21,7 +22,8 @@ export function parseJourneyMeta(text: string): JourneyMeta {
   }
 }
 
-export function parseJourney(text: string): ParsedDocument & { meta: JourneyMeta } {
+export function parseJourney(rawText: string): ParsedDocument & { meta: JourneyMeta } {
+  const text = normalizeMarkdown(rawText)
   const meta = parseJourneyMeta(text)
   const sections: ImportSection[] = []
 

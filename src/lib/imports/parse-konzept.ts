@@ -5,6 +5,7 @@ import {
   isPlaceholder,
   splitByHeadingLevel,
 } from './parse-utils'
+import { normalizeMarkdown } from './normalize-markdown'
 import type { ImportEntry, ImportSection, KonzeptMeta, ParsedDocument } from './types'
 
 const KURZFASSUNG_EXPECTED = [
@@ -246,7 +247,8 @@ const SECTION_PARSERS: Record<string, (body: string) => ImportEntry[]> = {
   '11. Abschlussempfehlung': (body) => singleEntry(body, ABSCHLUSS_EXPECTED),
 }
 
-export function parseKonzept(text: string): ParsedDocument & { meta: KonzeptMeta } {
+export function parseKonzept(rawText: string): ParsedDocument & { meta: KonzeptMeta } {
+  const text = normalizeMarkdown(rawText)
   const meta = parseKonzeptMeta(text)
   const sections: ImportSection[] = []
 

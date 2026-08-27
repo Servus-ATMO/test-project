@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { ProjectDetailView } from '@/components/clients/project-detail-view'
 import { getClientById, getProjectById } from '@/lib/clients/queries'
+import { getImportForProject } from '@/lib/imports/queries'
 
 export default async function ProjektDetailPage({
   params,
@@ -12,5 +13,7 @@ export default async function ProjektDetailPage({
   const project = await getProjectById(projektId)
   if (!client || !project || project.clientId !== kundeId) notFound()
 
-  return <ProjectDetailView client={client} project={project} />
+  const parsedImport = await getImportForProject(projektId)
+
+  return <ProjectDetailView client={client} project={project} parsedImport={parsedImport} />
 }

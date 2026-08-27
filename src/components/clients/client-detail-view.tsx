@@ -1,9 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -32,6 +34,7 @@ interface ClientDetailViewProps {
 
 export function ClientDetailView({ client, projects }: ClientDetailViewProps) {
   const router = useRouter()
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Spiegelt die serverseitige Pruefung in deleteProject() - erst
   // archivieren, dann loeschen (PROJ-17-Refine 2026-08-25).
@@ -70,6 +73,12 @@ export function ClientDetailView({ client, projects }: ClientDetailViewProps) {
           </CardContent>
         )}
       </Card>
+
+      {deleteError && (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Projekte</h2>
@@ -160,7 +169,11 @@ export function ClientDetailView({ client, projects }: ClientDetailViewProps) {
                         <DeleteAlertDialog
                           entityLabel={project.name}
                           onConfirm={async () => {
-                            await deleteProject(project.id, client.id)
+                            setDeleteError(null)
+                            const result = await deleteProject(project.id, client.id)
+                            if (!result.ok) {
+                              setDeleteError(result.reason ?? 'Das Projekt konnte nicht gelöscht werden.')
+                            }
                             router.refresh()
                           }}
                           trigger={

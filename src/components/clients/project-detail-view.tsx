@@ -7,13 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProjectFormDialog } from './project-form-dialog'
 import { ImportPanel } from '@/components/imports/import-panel'
 import type { Client, Project } from '@/lib/clients/types'
+import type { ParsedImport } from '@/lib/imports/types'
 
 interface ProjectDetailViewProps {
   client: Client
   project: Project
+  parsedImport: ParsedImport | null
 }
 
-export function ProjectDetailView({ client, project }: ProjectDetailViewProps) {
+export function ProjectDetailView({ client, project, parsedImport }: ProjectDetailViewProps) {
   return (
     <div className="space-y-6">
       <Link
@@ -47,7 +49,7 @@ export function ProjectDetailView({ client, project }: ProjectDetailViewProps) {
         )}
       </Card>
 
-      <ImportPanel projectId={project.id} />
+      <ImportPanel clientId={client.id} projectId={project.id} initialImport={parsedImport} />
     </div>
   )
 }

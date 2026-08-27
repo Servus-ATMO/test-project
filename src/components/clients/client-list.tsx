@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Table,
   TableBody,
@@ -36,6 +37,7 @@ export function ClientList({ clients, projects }: ClientListProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -77,6 +79,12 @@ export function ClientList({ clients, projects }: ClientListProps) {
 
   return (
     <div className="space-y-4">
+      {deleteError && (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="relative">
@@ -163,7 +171,11 @@ export function ClientList({ clients, projects }: ClientListProps) {
                         <DeleteAlertDialog
                           entityLabel={client.companyName}
                           onConfirm={async () => {
-                            await deleteClient(client.id)
+                            setDeleteError(null)
+                            const result = await deleteClient(client.id)
+                            if (!result.ok) {
+                              setDeleteError(result.reason ?? 'Der Kunde konnte nicht gelöscht werden.')
+                            }
                             router.refresh()
                           }}
                           trigger={
