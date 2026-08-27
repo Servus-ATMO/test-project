@@ -1,8 +1,8 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: In Review
+## Status: Approved
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-27 (Backend — Bugfix)
+**Last Updated:** 2026-08-27 (QA — zweite Runde, Bugfix verifiziert)
 
 ## Implementierungsnotizen
 - **Bugfix-Runde nach /qa (BUG-1 + BUG-2, 2026-08-27):** `saveImport()` schrieb den strukturierten Speichervorgang bisher als mehrere unabhängige, nicht transaktionale Inserts (BUG-1, High) und konnte bei einem Fehlschlag mitten im Storage-Upload ein verwaistes Rohdatei-Objekt hinterlassen (BUG-2, Low). Fix für beide zusammen: neue Postgres-Funktion `save_interview_import()` (Migration `save_interview_import_atomic`) bündelt Upsert von `interview_imports` (`ON CONFLICT (project_id) DO UPDATE`) + Ersatz-Insert von `import_sections`/`import_entries`/`import_fields` in einer einzigen DB-Transaktion — schlägt irgendein Schritt fehl, rollt Postgres den gesamten Aufruf automatisch zurück. `saveImport()` ruft diese Funktion jetzt zuerst auf und lädt die Rohdateien erst danach in den Storage-Bucket hoch (nicht mehr davor): schlägt der DB-Schritt fehl, wurde noch gar nichts hochgeladen (löst BUG-2 für den DB-Fehlerfall); schlägt nur der Storage-Upload fehl, sind die strukturierten Daten (das, was der Rest der App tatsächlich nutzt) bereits vollständig und korrekt gespeichert — das UI zeigt dafür einen neuen, nicht-blockierenden `storage-warning`-Hinweis statt eines harten Fehlers. Empirisch verifiziert: gezielter Fehlversuch direkt gegen die Funktion (Fremdschlüssel-Verletzung *nachdem* `import_sections` innerhalb desselben Aufrufs bereits geschrieben wurde) hinterlässt nachweislich null Zeilen in `interview_imports` und `import_sections` — Regressionstest dafür in der permanenten Suite (`tests/PROJ-3-import-werkstatt.spec.ts`).
@@ -193,11 +193,19 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 
 ## QA Test Results
 
-**Tested:** 2026-08-27
+**Tested:** 2026-08-27 (zweite Runde, nach `/backend`-Bugfix für BUG-1 + BUG-2)
 **App URL:** http://localhost:3000
 **Tester:** QA Engineer (AI)
 
-### Vorgehen
+**Nachtrag zur zweiten Runde:** Erste Runde fand BUG-1 (High, fehlende Transaktion in `saveImport`) und BUG-2 (Low, verwaiste Storage-Datei bei partiellem Fehlschlag). Beide wurden zusammen behoben (`save_interview_import`-RPC, siehe Implementierungsnotizen/Decision Log). Diese zweite Runde verifiziert den Fix unabhängig von der Bugfix-Implementierung: vollständige Regression neu ausgeführt, RLS/GRANTs auf der neuen Funktion erneut direkt gegen die DB geprüft, AC-11 unten aktualisiert. AC-1 bis AC-10 sowie alle Edge Cases und der Security-Audit unten sind unverändert gegenüber der ersten Runde weiterhin gültig (nichts an der bereits verifizierten Funktionalität wurde durch den Fix berührt) und wurden durch die erneute vollständige Testausführung (Playwright + Vitest) bestätigt.
+
+### Vorgehen (zweite Runde)
+- `npm test` (70/70), `npm run lint`, `npm run build` erneut sauber nach dem Fix.
+- Vollständige Playwright-Regression erneut ausgeführt: 21/21 grün (PROJ-2: 12, PROJ-17: 4, PROJ-3: 5 — inkl. des neuen permanenten Atomizitäts-Regressionstests für BUG-1).
+- RLS/GRANTs der neuen Postgres-Funktion `save_interview_import` direkt gegen die DB geprüft: `SECURITY INVOKER` bestätigt (keine Rechteausweitung), `EXECUTE` nur für `authenticated` erteilt, `has_function_privilege('anon', ..., 'execute')` liefert `false`. Keine neuen Security-Advisor-Findings (`get_advisors`) gegenüber der ersten Runde.
+- Unabhängige Verifikation, dass BUG-1 tatsächlich behoben ist: derselbe gezielte Fehlversuch aus der Bugfix-Analyse (Fremdschlüssel-Verletzung in `import_entries`, nachdem `import_sections` im selben Funktionsaufruf bereits geschrieben wurde) erneut direkt gegen die Funktion ausgeführt — Ergebnis unverändert: null Zeilen in `interview_imports`/`import_sections` danach.
+
+### Vorgehen (erste Runde)
 - `npm test` (70 Unit-Tests, alle grün) und `npm run lint` / `npm run build` vor der eigentlichen QA-Runde geprüft.
 - Code-Review aller neuen Dateien (`src/lib/imports/*`, `src/components/imports/*`, Server Actions, Migration).
 - RLS-Policies und GRANTs der vier neuen Tabellen sowie die Storage-Policies des `imports`-Buckets direkt in Supabase geprüft (`pg_policies`, `information_schema.role_table_grants`) — insbesondere wegen der BUG-1-Lektion aus PROJ-17 (RLS muss dieselbe Regel durchsetzen wie die Server Action).
@@ -239,7 +247,7 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 - [x] Zweiter Import über denselben Import-Datensatz bestätigt (gleiche `interview_imports.id`, gleiche Section-Anzahl nach Ersatz statt Verdopplung), Warnbanner „Der bestehende Import dieses Projekts wird durch diese Version ersetzt." erscheint korrekt
 
 #### AC-11: Fehlerverhalten bei Upload-/Parse-Fehler
-- [~] **Teilweise bestätigt, mit einem Fund** — der Hard-Fail-Pfad (AC-6) verhält sich korrekt (Fehlermeldung, ausgewählte Dateien bleiben erhalten, keine DB-Schreibung). Der mehrstufige Speichervorgang selbst (`saveImport`) ist jedoch **nicht transaktional** — siehe BUG-1 unten. Dieser Teilaspekt der Acceptance Criteria („keine Teildaten übernehmen") ist dadurch nicht in jedem Fehlerfall garantiert.
+- [x] **Vollständig bestätigt (zweite Runde)** — der Hard-Fail-Pfad (AC-6) verhält sich korrekt (Fehlermeldung, ausgewählte Dateien bleiben erhalten, keine DB-Schreibung). Der mehrstufige Speichervorgang (`saveImport`) läuft jetzt über die atomare Postgres-Funktion `save_interview_import` — unabhängig verifiziert, dass ein Fehlschlag mitten im Vorgang tatsächlich keine Teildaten mehr hinterlässt (siehe BUG-1, behoben). Der verbleibende Nebenpfad „DB erfolgreich, nur Storage-Backup schlägt fehl" führt zu einem expliziten, nicht-blockierenden Hinweis statt eines irreführenden Fehlers (BUG-2, behoben).
 
 ### Edge Cases Status
 
@@ -264,7 +272,7 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 - [x] Storage: `imports`-Bucket-Policy ist auf `authenticated` beschränkt (kein `anon`-Zugriff), Bucket ist `public: false`
 - [x] Input validation / XSS: eingeschleuster `<img src=x onerror=alert(1)>`-Payload in einer Journey-Antwort wird beim Rendern der Vorschau/Übersicht als reiner Text angezeigt (React-Escaping in `parsed-document-view.tsx`, kein `dangerouslySetInnerHTML` verwendet), kein echtes `<img>`-Element im DOM
 - [x] Cross-Feature-Zugriffskontrolle: `deleteProject` blockiert korrekt, solange ein Interview-Import existiert (zusätzlich zur `ON DELETE RESTRICT`-Absicherung auf DB-Ebene)
-- [ ] BUG-1 (siehe unten): fehlende Transaktion beim mehrstufigen Speichervorgang — kein Zugriffskontrollproblem, aber eine Datenintegritäts-/Zuverlässigkeitslücke, die im Security-Audit-Sinn als „unvollständige Fehlerbehandlung" zählt
+- [x] BUG-1 — behoben (siehe unten): fehlende Transaktion beim mehrstufigen Speichervorgang. War kein Zugriffskontrollproblem, aber eine Datenintegritäts-/Zuverlässigkeitslücke; die neue Funktion `save_interview_import` wurde zusätzlich selbst auf Zugriffsrechte geprüft (`SECURITY INVOKER`, `EXECUTE` nur für `authenticated`, `anon` bestätigt ohne Recht) — keine neue Angriffsfläche durch den Fix
 
 ### Regression Testing
 - [x] PROJ-17-Suite (4 Tests, inkl. BUG-1-RLS-Regressionstest): weiterhin grün
@@ -293,11 +301,11 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 - **Status: FIXED (2026-08-27, zusammen mit BUG-1).** Der Storage-Upload läuft jetzt erst NACH dem erfolgreichen, atomaren DB-Schritt statt davor: schlägt der DB-Schritt fehl, wird gar nichts hochgeladen (kein Waisenobjekt mehr möglich). Schlägt umgekehrt nur der Upload fehl, sind die strukturierten Daten bereits korrekt gespeichert — das UI zeigt dafür jetzt einen neuen, nicht-blockierenden `storage-warning`-Hinweis in der Lese-Übersicht statt eines harten, irreführenden Fehlers. Dieser Nebenpfad wurde per Code-Review/Typprüfung verifiziert, nicht live durch einen echten Storage-Fehlschlag getriggert (dafür wäre ein künstlicher Storage-Fehler nötig, der außerhalb einer sinnvollen QA-Reichweite auf der echten Instanz liegt).
 
 ### Summary
-- **Acceptance Criteria:** 9/11 vollständig bestanden, 1 bewusst nicht testbar (AC-9, Stub-Abhängigkeit von PROJ-4), 1 mit Fund, danach behoben (AC-11 / BUG-1)
-- **Bugs Found:** 2 total (1 High, 1 Low) — **beide behoben** in der `/backend`-Bugfix-Runde vom 2026-08-27
-- **Security:** Pass — RLS/GRANTs/Storage-Policies korrekt, kein PROJ-17-BUG-1-artiger Gap, XSS-sicher, Auth/Cross-Feature-Zugriffskontrolle korrekt. BUG-1 war ein Datenintegritäts-, kein Zugriffskontrollproblem.
-- **Production Ready:** Vorbehaltlich einer erneuten formalen `/qa`-Bestätigung — beide Bugs sind behoben und empirisch/durch Regressionstests abgesichert, eine frische `/qa`-Runde gegen die vollständige Spec steht aber noch aus, bevor der Status auf „Approved“ wechselt
-- **Recommendation:** `/qa PROJ-3` erneut laufen lassen, um den Fix formal gegen alle Acceptance Criteria zu bestätigen, dann `/deploy`.
+- **Acceptance Criteria:** 10/11 vollständig bestanden, 1 bewusst nicht testbar (AC-9, Stub-Abhängigkeit von PROJ-4 — kein Bug)
+- **Bugs Found:** 2 total in der ersten Runde (1 High, 1 Low) — **beide behoben und in der zweiten Runde unabhängig verifiziert**, keine neuen Bugs in dieser Runde gefunden
+- **Security:** Pass — RLS/GRANTs/Storage-Policies auf allen vier Tabellen UND der neuen `save_interview_import`-Funktion korrekt (kein PROJ-17-BUG-1-artiger Gap, `anon` ohne jedes Recht, `SECURITY INVOKER` bestätigt), XSS-sicher, Auth/Cross-Feature-Zugriffskontrolle korrekt, keine neuen Security-Advisor-Findings durch den Fix
+- **Production Ready:** YES
+- **Recommendation:** Deploy — Status auf **Approved** gesetzt. Nächster Schritt: `/deploy PROJ-3`.
 
 ## Deployment
 _To be added by /deploy_
