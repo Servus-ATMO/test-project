@@ -38,12 +38,17 @@ export function ProjectDetailView({ client, project, parsedImport, enrichment }:
               </Badge>
             </CardTitle>
           </div>
-          <ProjectFormDialog
-            mode="edit"
-            clientId={client.id}
-            project={project}
-            trigger={<Button variant="outline">Bearbeiten</Button>}
-          />
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/kunden/${client.id}/${project.id}/graph`}>Konzept-Graph</Link>
+            </Button>
+            <ProjectFormDialog
+              mode="edit"
+              clientId={client.id}
+              project={project}
+              trigger={<Button variant="outline">Bearbeiten</Button>}
+            />
+          </div>
         </CardHeader>
         {project.notes && (
           <CardContent>

@@ -1,8 +1,15 @@
 # PROJ-5: DAG/Sankey-Graph-Visualisierung
 
-## Status: Architected
+## Status: In Progress
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-28 (Architecture)
+**Last Updated:** 2026-08-28 (Frontend)
+
+## Implementierungsnotizen
+- **Graph-Modell als reine Bibliothek umgesetzt** (`src/lib/graph/build-graph-model.ts`, `types.ts`): rechnet `ParsedImport` + `Enrichment` (beide bereits vorhanden aus PROJ-3/PROJ-4) in Knoten/Kanten für alle drei Ebenen um. "Notizen zur Aufnahme" bewusst aus Ebene 1 ausgeschlossen (kein Themenblock). Referenziert eine `informs`-Kante ein Feld außerhalb der abgebildeten Themenblöcke (z. B. ein Notizen- oder Konzept-Feld), wird sie ohne Absturz übersprungen, der Dimension-Knoten selbst bleibt trotzdem bestehen — Best-Effort wie im Rest des Projekts. Komprimierte Frage→Content-Block-Kanten werden vorab berechnet und auf ein Vorkommen je Paar dedupliziert. 11 Unit-Tests (`build-graph-model.test.ts`) decken Empty-Label-Fallback, Gap-Knoten, isolierte Content-Blöcke, übersprungene Fremd-Referenzen, Kompression und beide Konflikttypen ab.
+- **UI umgesetzt:** neue Unterseite `/kunden/[kundeId]/[projektId]/graph` (Server Component, liest wie die bestehende Projektseite über `getImportForProject()`/`getEnrichmentForProject()`) mit den drei spezifizierten Zuständen (kein Import / Import ohne Anreicherung / voller Graph). `GraphView` (Client Component) rendert das Diagramm mit React Flow (`@xyflow/react`, neues Paket), `GraphNode` als gemeinsamer Knoten-Renderer für alle vier Typen, `DossierPanel` als `Sheet`-basiertes Seitenpanel. Navigations-Button "Konzept-Graph" auf der bestehenden Projekt-Detailseite ergänzt.
+- **Interaktionsmodell-Korrektur gegenüber der Architektur-Skizze:** Ein Klick auf einen Themenblock löst jetzt AUSSCHLIESSLICH das Auf-/Zuklappen aus, öffnet aber nicht mehr gleichzeitig das Dossier-Panel. Grund: bei der eigenen Verifikation im Browser (gegen die echten Daten von „1. Testkunde") stellte sich heraus, dass das Dossier-`Sheet` (Radix Dialog) immer einen blockierenden Overlay rendert — ein gleichzeitiges Öffnen hätte den Ebene-2-Schalter und weitere Knoten-Klicks dahinter unbedienbar gemacht. Passt auch besser zur AC-Formulierung ("die gestellte Frage und die gegebene Antwort", singular) als die ursprünglich vorgesehene Themenblock-Sammelansicht. `DossierNodeData`-Typ (`Exclude<GraphNodeData, ThemenblockNode>`) erzwingt das jetzt zur Compile-Zeit.
+- **Eigene Browser-Verifikation vor Fertigmeldung** (gegen den lokalen Dev-Server, echte Daten von „1. Testkunde", danach vollständig aufgeräumt: temporärer Test-Nutzer gelöscht, Screenshots/Testdatei entfernt): Themenblock-Aufklappen, Ebene-2-Schalter, Persona-Instanz-Knoten (z. B. drei separate "Business Goal"-Knoten für Vereine & Ligen/Investoren/Presse), Lücken-Badge ("Traffic Source: Lücke"), Konflikt-Badge ("Abschnitt 5: Gateway"), Dossier-Panel für einen isolierten Content-Block ("Zusammenfassung": korrekt "Keine Profildimension … begründet diesen Block") — alles wie spezifiziert bestätigt. Keine Konsolenfehler.
+- **Kein Backend nötig** (wie in der Architektur festgelegt): keine neue Migration, keine neue RLS-Policy, keine neue Query — reine Lesezugriffe über bereits bestehende PROJ-3/PROJ-4-Funktionen.
 
 ## Dependencies
 - Requires: PROJ-4 (KI-Anreicherung) — liefert Ebene 2 (Profildimensionen inkl. Persona-Instanzen), die Kanten `informs`/`shapes` und die Konflikterkennung
@@ -70,7 +77,7 @@ Kein Content-Block lässt sich direkt aus einer Frage ableiten — der Weg führ
 - Rein lesender Zugriff auf bereits bestehende Tabellen (`interview_imports`/`import_sections`/`import_entries`/`import_fields`, `enrichments`/`enrichment_personas`/`enrichment_dimensions`/`enrichment_edges`/`enrichment_conflicts`) — keine neuen Schreibpfade
 
 ## Open Questions
-- [ ] Konkretes Mobile-Verhalten (375px) für ein mehrspaltiges Graph-Layout mit Dossier-Panel — an `/frontend` zur Klärung übergeben
+- [x] ~~Konkretes Mobile-Verhalten (375px) für ein mehrspaltiges Graph-Layout mit Dossier-Panel~~ — geklärt bei `/frontend` (2026-08-28): React Flows eingebautes Touch-Pan/Zoom reicht, kein eigener Mobile-Code-Pfad; Dossier-Panel wird über die bereits gewählte `Sheet`-Komponente auf schmalen Screens automatisch zum Vollbild-Overlay
 - [ ] Zoom/Pan- oder Scroll-Mechanik bei sehr vielen Ebene-2-Knoten — technische Umsetzung an `/architecture`/`/frontend`
 - [ ] Genaue visuelle Unterscheidung Konflikt-Badge vs. Lücken-Badge vs. Should-/Nice-to-Have-Badge (aus der Konzeptfäden-Spezifikation, Abschnitt 5, für spätere Wireframe-Kopplung relevant) — Detailfrage für `/frontend`, nicht produktentscheidend für MVP
 
