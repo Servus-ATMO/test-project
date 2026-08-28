@@ -252,13 +252,20 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
   }
 
   const renderData = useMemo(() => {
-    // Persona-Filter hat Vorrang vor einer Knoten-Auswahl: ist ein Filter
-    // aktiv, bestimmt er weiterhin das Highlight, auch wenn nebenbei ein
-    // Dossier fuer einen (ggf. anderen) Knoten offen ist.
-    const highlight: HighlightResult | null = selectedPersona
-      ? computeHighlightForPersona(selectedPersona, model, ebene2Visible)
-      : selectedNode
-        ? computeHighlight(selectedNode.id, model, ebene2Visible)
+    // Eine Knoten-Auswahl hat Vorrang vor dem Persona-Filter: waehrend ein
+    // Dossier offen ist, zeigt das Highlight die tatsaechlichen Verbindungen
+    // GENAU DIESES Knotens - identisch zum Verhalten ohne aktiven Filter
+    // (Nutzer-Feedback 2026-08-29: ein Knoten ohne Kantenverbindung zum
+    // angeklickten Knoten muss ausgegraut bleiben, auch wenn er selbst Teil
+    // der gefilterten Persona waere). Der Persona-Filter bleibt dabei als
+    // Dropdown-Auswahl bestehen (siehe handleNodeSelect) und uebernimmt das
+    // Highlight erst wieder, sobald kein Knoten mehr ausgewaehlt ist (Dossier
+    // geschlossen) - das entspricht dem bereits bestaetigten Verhalten
+    // "Ansonsten passt die Ansicht, wenn die Sidebar wieder geschlossen wird".
+    const highlight: HighlightResult | null = selectedNode
+      ? computeHighlight(selectedNode.id, model, ebene2Visible)
+      : selectedPersona
+        ? computeHighlightForPersona(selectedPersona, model, ebene2Visible)
         : null
 
     const themenblockHasActiveChild = new Set(
@@ -279,15 +286,10 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
       if (!highlight) return 'none'
       if (kind === 'themenblock') return themenblockHasActiveChild.has(nodeId) ? 'active' : 'dim'
       if (kind === 'dimensiongroup') return dimensionGroupHasActiveChild.has(nodeId) ? 'active' : 'dim'
-      // Der "selected"-Ring (volle Sichtbarkeit fuer den angeklickten Knoten)
-      // gilt nur, wenn die Knoten-Auswahl selbst die Highlight-Quelle ist -
-      // ist ein Persona-Filter aktiv, bleibt dieser die alleinige Quelle
-      // (siehe oben), der geoeffnete Knoten ist dann nur ein unabhaengiges
-      // Dossier-Detail und folgt wie jeder andere Knoten der aktiv/ausgegraut-
-      // Regel des Filters (Nutzer-Feedback 2026-08-29: ein Knoten ausserhalb
-      // der gefilterten Persona soll auch bei geoeffnetem Dossier ausgegraut
-      // bleiben, nicht durch den Klick "freigestellt" werden).
-      if (!selectedPersona && selectedNode && nodeId === selectedNode.id) return 'selected'
+      // Der angeklickte Knoten ist immer Teil seines eigenen Highlights (die
+      // Knoten-Auswahl hat Vorrang, siehe oben) - bekommt zusaetzlich zur
+      // aktiven Faerbung den "selected"-Ring als visuelle Hervorhebung.
+      if (selectedNode && nodeId === selectedNode.id) return 'selected'
       return highlight.activeNodeIds.has(nodeId) ? 'active' : 'dim'
     }
 
