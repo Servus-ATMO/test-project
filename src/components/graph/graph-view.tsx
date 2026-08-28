@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { buildGraphModel } from '@/lib/graph/build-graph-model'
 import { computeHighlight } from '@/lib/graph/highlight'
+import { buildEffectiveEdges } from '@/lib/graph/effective-edges'
 import { GraphNode, type GraphFlowNodeData, type HighlightState } from './graph-node'
 import { DossierPanel } from './dossier-panel'
 import type { DossierNodeData } from '@/lib/graph/types'
@@ -61,8 +62,21 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
 
   const { nodes, edges } = useMemo(() => {
     const highlight = selectedNode ? computeHighlight(selectedNode.id, model, ebene2Visible) : null
-    const highlightFor = (nodeId: string): HighlightState => {
+
+    // Themenblock-Knoten sind selbst nie Teil einer Herkunft/Wirkung-Spur
+    // (computeHighlight() traversiert nur Frage/Dimension/Content-Block) -
+    // ist aber eine seiner (ggf. eingeklappten) Fragen aktiv, soll der
+    // Themenblock-Knoten das sichtbar mit anzeigen, da die Sammel-Kante
+    // (siehe buildEffectiveEdges) dann von ihm ausgeht.
+    const themenblockHasActiveChild = new Set(
+      model.themenbloecke
+        .filter((tb) => highlight && tb.frageIds.some((id) => highlight.activeNodeIds.has(id)))
+        .map((tb) => tb.id)
+    )
+
+    const highlightFor = (nodeId: string, isThemenblock = false): HighlightState => {
       if (!highlight) return 'none'
+      if (isThemenblock) return themenblockHasActiveChild.has(nodeId) ? 'active' : 'dim'
       if (nodeId === selectedNode!.id) return 'selected'
       return highlight.activeNodeIds.has(nodeId) ? 'active' : 'dim'
     }
@@ -77,7 +91,7 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
         id: themenblock.id,
         type: 'themenblock',
         position: { x: COLUMN_X.ebene1, y },
-        data: { node: themenblock, expanded },
+        data: { node: themenblock, expanded, highlight: highlightFor(themenblock.id, true) },
         draggable: false,
       })
       y += ROW_HEIGHT
@@ -124,42 +138,26 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
       y3 += ROW_HEIGHT
     }
 
-    const dimensionIds = new Set(model.dimensionen.map((d) => d.id))
-    const contentBlockIds = new Set(model.contentBlocks.map((b) => b.id))
-
     // Aktive Kanten (Teil der Herkunft/Wirkung des ausgewaehlten Knotens)
     // werden orange hervorgehoben, alle anderen stark abgedunkelt - analog
-    // zum Referenz-Sketch (siehe PROJ-5-Implementierungsnotizen).
-    const edgeStyle = (edgeId: string, base: CSSProperties = {}): CSSProperties => {
+    // zum Referenz-Sketch (siehe PROJ-5-Implementierungsnotizen). Eine
+    // (ggf. zusammengefasste) Kante gilt als aktiv, wenn mindestens eine
+    // ihrer urspruenglichen Kanten aktiv ist.
+    const edgeStyle = (originalEdgeIds: string[], base: CSSProperties = {}): CSSProperties => {
       if (!highlight) return base
-      if (highlight.activeEdgeIds.has(edgeId)) {
+      if (originalEdgeIds.some((id) => highlight.activeEdgeIds.has(id))) {
         return { ...base, stroke: ACTIVE_EDGE_COLOR, opacity: 1, strokeWidth: 2 }
       }
       return { ...base, opacity: 0.06 }
     }
 
-    const edges: Edge[] = ebene2Visible
-      ? model.edges
-          .filter((e) => {
-            if (e.edgeType === 'informs') return visibleFrageIds.has(e.source) && dimensionIds.has(e.target)
-            return dimensionIds.has(e.source) && contentBlockIds.has(e.target)
-          })
-          .map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            animated: false,
-            style: edgeStyle(e.id),
-          }))
-      : model.compressedEdges
-          .filter((e) => visibleFrageIds.has(e.source) && contentBlockIds.has(e.target))
-          .map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            animated: false,
-            style: edgeStyle(e.id, { strokeDasharray: '4 4' }),
-          }))
+    const edges: Edge[] = buildEffectiveEdges(model, visibleFrageIds, ebene2Visible).map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      animated: false,
+      style: edgeStyle(e.originalEdgeIds, ebene2Visible ? {} : { strokeDasharray: '4 4' }),
+    }))
 
     return { nodes, edges }
   }, [model, ebene2Visible, expandedThemenbloecke, selectedNode])
