@@ -48,7 +48,7 @@
 
 ## Kanten zu Content-Blöcken
 
-[Ein "### Kante: "-Block pro Dimension-Content-Block-Verbindung. Ein Content-Block kann von mehreren Dimensionen geprägt sein — dann mehrere Blöcke mit demselben Ziel.]
+[Ein "### Kante: "-Block pro Dimension-Content-Block-Verbindung. Ein Content-Block kann von mehreren Dimensionen geprägt sein — dann mehrere Blöcke mit demselben Ziel. JEDE Dimensionswert-Instanz aus "## Dimensionen" (außer "nicht ableitbar") muss in MINDESTENS einer Kante als Quelle vorkommen, auch strategische/indirekte Dimensionen.]
 
 ### Kante: [Dimensionsname] (Persona: [Name]) → [Content-Block-Label]
 

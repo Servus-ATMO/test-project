@@ -192,7 +192,11 @@ function parseDimensions(
   return { dimensions, informsEdges, unresolvedReferences }
 }
 
-const KANTE_HEADING = /^Kante:\s*(.+?)(?:\s*\(Persona:\s*(.+?)\))?\s*(?:→|->)\s*(.+)$/
+// "Kante: " ist optional (Bug-Report PROJ-4, 2026-08-28: eine ohne dieses
+// Praefix geschriebene Kante wurde bisher komplett stillschweigend
+// uebersprungen - keine Kante, keine Warnung, siehe unten den Fallback fuer
+// den verbleibenden Nicht-Treffer-Fall).
+const KANTE_HEADING = /^(?:Kante:\s*)?(.+?)(?:\s*\(Persona:\s*(.+?)\))?\s*(?:→|->)\s*(.+)$/
 
 function parseShapesEdges(
   body: string,
@@ -205,7 +209,13 @@ function parseShapesEdges(
 
   for (const { title, body: edgeBody } of splitByHeadingLevel(body, 3)) {
     const match = title.trim().match(KANTE_HEADING)
-    if (!match) continue
+    if (!match) {
+      // Ueberschrift folgt ueberhaupt keinem erkennbaren "... -> ..."-Muster
+      // (z. B. voellig anderes Format) - frueher stillschweigend verworfen,
+      // jetzt als Warnung sichtbar statt spurlos zu verschwinden.
+      unresolvedReferences.push(`Kante „${title.trim()}“ konnte keinem Muster zugeordnet werden.`)
+      continue
+    }
     const dimensionName = match[1].trim()
     const personaName = match[2]?.trim()
     const targetLabel = match[3].trim()

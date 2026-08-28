@@ -286,6 +286,40 @@ describe('parseEnrichmentResult', () => {
     expect(result.unresolvedReferences.some((msg) => msg.includes('entfällt'))).toBe(true)
   })
 
+  // Bug-Report PROJ-4 (echte Kundendaten, 2026-08-28): 12 von 38 gefundenen
+  // Dimensionswerten hatten informs-, aber keine shapes-Kanten. Root Cause
+  // (mit-)vermutet: eine "Kante:"-Ueberschrift, die nicht ins erwartete
+  // Muster passt, wurde bisher komplett stillschweigend uebersprungen (kein
+  // Eintrag in unresolvedReferences).
+  it('resolves a Kante heading even without the "Kante:" prefix', () => {
+    const result = parseEnrichmentResult(
+      VALID_RESULT.replace(
+        '### Kante: Business Goal (Persona: Vereine & Ligen) → Abschnitt 1: Hero',
+        '### Business Goal (Persona: Vereine & Ligen) → Abschnitt 1: Hero'
+      ),
+      buildFixtureImport()
+    )
+    const businessGoalVereine = result.dimensions.find(
+      (d) => d.dimensionName === 'Business Goal' && d.personaId === result.personas[0].id
+    )
+    expect(
+      result.edges.some((e) => e.edgeType === 'shapes' && e.sourceDimensionId === businessGoalVereine?.id)
+    ).toBe(true)
+  })
+
+  it('reports a Kante heading that matches no pattern at all as an unresolved warning instead of silently dropping it', () => {
+    const result = parseEnrichmentResult(
+      VALID_RESULT.replace(
+        '### Kante: Business Goal (Persona: Vereine & Ligen) → Abschnitt 1: Hero',
+        '### Business Goal wirkt sich auf den Hero aus'
+      ),
+      buildFixtureImport()
+    )
+    expect(
+      result.unresolvedReferences.some((msg) => msg.includes('Business Goal wirkt sich auf den Hero aus'))
+    ).toBe(true)
+  })
+
   it('flags text without any recognizable structure as not recognizable', () => {
     const result = parseEnrichmentResult('Das ist nur ein normaler Fliesstext ohne jede Struktur.', buildFixtureImport())
     expect(result.hasRecognizableStructure).toBe(false)

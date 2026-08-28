@@ -54,7 +54,7 @@ const OUTPUT_FORMAT = `# KI-Anreicherung – [Projektname]
 
 ## Kanten zu Content-Blöcken
 
-[Ein "### Kante: "-Block pro Dimension-Content-Block-Verbindung. Ein Content-Block kann von mehreren Dimensionen geprägt sein — dann mehrere Blöcke mit demselben Ziel.]
+[Ein "### Kante: "-Block pro Dimension-Content-Block-Verbindung. Ein Content-Block kann von mehreren Dimensionen geprägt sein — dann mehrere Blöcke mit demselben Ziel. JEDE Dimensionswert-Instanz aus "## Dimensionen" (außer "nicht ableitbar") muss in MINDESTENS einer Kante als Quelle vorkommen, auch strategische/indirekte Dimensionen (siehe Schritt 3).]
 
 ### Kante: [Dimensionsname] (Persona: [Name]) → [Content-Block-Label]
 
@@ -113,6 +113,10 @@ Für jede Werte-Instanz: Zitiere die genaue Quelle (Eintrag-Label → Feldname, 
 ## Schritt 3 — Kanten zu den Content-Blöcken
 
 Ordne jedem Content-Block aus Ebene 3 (unten eingebettet) die Dimensionen zu, die ihn geprägt haben (ein Content-Block kann von mehreren Dimensionen geprägt sein). Auch hier: Impact-Text + Gewichtung je Kante.
+
+WICHTIG — Vollständigkeit: Gehe zusätzlich zur Content-Block-Sicht auch einmal jede einzelne Dimensionswert-Instanz aus Schritt 2 durch (außer denen mit "nicht ableitbar"), und stelle sicher, dass jede davon in mindestens einer Kante als Quelle vorkommt. Auch strategische/indirekte Dimensionen (z. B. Business Goal, Desire, Emotional Drivers, User Intent), die keinen einzelnen Content-Block exklusiv prägen, wirken sich real auf mindestens einen Block aus (typischerweise Hero oder den Block mit dem stärksten Conversion-Bezug) — beschreibe diesen Einfluss dort explizit, statt die Dimension ganz ohne Kante zu lassen. Nur bei "nicht ableitbar" entfällt diese Pflicht.
+
+WICHTIG — exaktes Überschriftenformat: Jede Kante MUSS exakt als "### Kante: [Dimensionsname] (Persona: [Name]) → [Content-Block-Label]" geschrieben werden (bei Umsetzungsrahmen ohne die Persona-Klammer) — kein anderes Trennzeichen als "→" oder "->". Eine Überschrift, die davon zu stark abweicht, kann nicht automatisch verarbeitet werden.
 
 ## Schritt 4 — Konflikte erkennen (nur erkennen, NICHT lösen)
 
