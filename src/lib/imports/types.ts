@@ -41,7 +41,7 @@ export interface ParsedImport {
   konzept: ParsedDocument & { meta: KonzeptMeta }
 }
 
-export interface FormatWarning {
-  slot: 'journey' | 'konzept'
-  message: string
-}
+// Welcher der beiden erwarteten Bloecke (Journey-Transkript / Landingpage-
+// Konzept) in der hochgeladenen kombinierten Datei nicht gefunden wurde -
+// null, wenn beide vorhanden sind. Siehe splitCombinedImport().
+export type MissingBlock = 'journey' | 'konzept' | null

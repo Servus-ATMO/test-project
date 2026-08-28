@@ -12,8 +12,7 @@ import type {
 export interface InterviewImportRow {
   id: string
   project_id: string
-  journey_file_path: string
-  konzept_file_path: string
+  raw_file_path: string
   journey_datum: string
   journey_gefuehrt_mit: string
   journey_prompt_version: string

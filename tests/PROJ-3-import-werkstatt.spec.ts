@@ -103,7 +103,7 @@ test('anon Supabase key cannot read or write import tables directly (no GRANT fo
   }
   const { error: writeError } = await supabase
     .from('interview_imports')
-    .insert({ project_id: projectId, journey_file_path: 'x', konzept_file_path: 'y' })
+    .insert({ project_id: projectId, raw_file_path: 'x' })
   expect(writeError?.code).toBe('42501')
 })
 
@@ -124,8 +124,7 @@ test('save_interview_import() is atomic: a failure partway through leaves no par
 
   const { error } = await admin.rpc('save_interview_import', {
     p_project_id: projectId,
-    p_journey_file_path: 'test/journey.md',
-    p_konzept_file_path: 'test/konzept.md',
+    p_raw_file_path: 'test/interview-import.md',
     p_journey_datum: '2026-08-27',
     p_journey_gefuehrt_mit: 'Test',
     p_journey_prompt_version: 'v2',
