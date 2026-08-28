@@ -135,16 +135,22 @@ function parseDimensions(
     // "Umsetzungsrahmen" ist immer genau eine projektweite Instanz (kein
     // "#### Persona:"-Unterblock) - alle anderen Dimensionen haben einen
     // Unterblock je Persona, in der sich der Wert tatsaechlich unterscheidet.
-    const instanceBlocks: { personaId: string | null; body: string }[] =
+    // personaLabel wird NUR fuer Warnmeldungen mitgefuehrt (Bug-Report
+    // PROJ-4, 2026-08-28: ohne Persona-Angabe in der Meldung sah es so aus,
+    // als beträfe eine "Quelle konnte nicht zugeordnet werden"-Warnung
+    // dieselbe Dimensionswert-Instanz, die in der Vorschau daneben korrekt
+    // mit Wert/Impact-Text angezeigt wurde - tatsaechlich betraf sie eine
+    // ANDERE Persona-Instanz derselben Dimension).
+    const instanceBlocks: { personaId: string | null; personaLabel: string; body: string }[] =
       dimensionName === GLOBAL_ONLY_DIMENSION
-        ? [{ personaId: null, body: dimensionBody }]
+        ? [{ personaId: null, personaLabel: 'projektweit', body: dimensionBody }]
         : splitByHeadingLevel(dimensionBody, 4).map(({ title: personaTitle, body: subBody }) => {
             const personaName = personaTitle.replace(/^Persona:\s*/i, '').trim()
             const persona = personas.find((p) => p.name === personaName)
-            return { personaId: persona?.id ?? null, body: subBody }
+            return { personaId: persona?.id ?? null, personaLabel: personaName, body: subBody }
           })
 
-    for (const { personaId, body: instanceBody } of instanceBlocks) {
+    for (const { personaId, personaLabel, body: instanceBody } of instanceBlocks) {
       const fields = extractLabeledFields(instanceBody)
       const rawValue = fields.get('Wert') ?? ''
       const isGap = isPlaceholder(rawValue) || /nicht ableitbar/i.test(rawValue)
@@ -177,7 +183,7 @@ function parseDimensions(
         }
       } else {
         unresolvedReferences.push(
-          `Dimension „${dimensionName}“: Quelle „${quelle}“ konnte keinem importierten Feld zugeordnet werden.`
+          `Dimension „${dimensionName}“ (Persona: ${personaLabel}): Quelle „${quelle}“ konnte keinem importierten Feld zugeordnet werden.`
         )
       }
     }

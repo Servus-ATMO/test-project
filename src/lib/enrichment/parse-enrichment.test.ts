@@ -250,6 +250,31 @@ describe('parseEnrichmentResult', () => {
     expect(result.unresolvedReferences.some((msg) => msg.includes('Business Goal'))).toBe(false)
   })
 
+  // Nutzer-Feedback (2026-08-28): eine Dimension mit mehreren Persona-
+  // Instanzen (eine davon aufloesbar, eine nicht) sah in der Warnliste so
+  // aus, als beträfe die Warnung dieselbe Instanz, die daneben korrekt mit
+  // Wert/Impact-Text angezeigt wurde. Die Persona muss in der Meldung
+  // benannt sein, um das eindeutig zu machen.
+  it('names the persona in an unresolved-Quelle warning, to distinguish it from other resolved instances of the same dimension', () => {
+    const withSecondPersonaInstance = VALID_RESULT.replace(
+      '#### Persona: Investoren\n**Wert:** nicht ableitbar\n**Quelle:** Frage 1 → Antwort\n**Impact-Text:** Keine ausreichende Grundlage.\n**Gewichtung:** 1',
+      '#### Persona: Investoren\n**Wert:** nicht ableitbar\n**Quelle:** entfällt\n**Impact-Text:** Keine ausreichende Grundlage.\n**Gewichtung:** 1'
+    )
+    const result = parseEnrichmentResult(withSecondPersonaInstance, buildFixtureImport())
+    expect(
+      result.unresolvedReferences.some(
+        (msg) => msg.includes('Business Goal') && msg.includes('Investoren')
+      )
+    ).toBe(true)
+    // Die aufloesbare "Vereine & Ligen"-Instanz bleibt unbetroffen.
+    const businessGoalVereine = result.dimensions.find(
+      (d) => d.dimensionName === 'Business Goal' && d.personaId === result.personas[0].id
+    )
+    expect(
+      result.edges.some((e) => e.edgeType === 'informs' && e.targetDimensionId === businessGoalVereine?.id)
+    ).toBe(true)
+  })
+
   it('still reports a Quelle as unresolved when it is free-text prose, not a reference', () => {
     const result = parseEnrichmentResult(
       VALID_RESULT.replace(
