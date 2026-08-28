@@ -372,18 +372,21 @@ Nach der Nutzerantwort:
 * Analysiere die Antwort intern.
 * Entwickle daraus die nächste Frage.
 * Fahre bis Frage 10 fort.
-* Gib erst danach die vollständige Landingpage-Konzeption aus.
+* Gib erst danach den kombinierten Ausgabe-Block (siehe „AUSGABE NACH FRAGE 10" unten) aus.
 Die Journey soll sich nicht wie ein Fragebogen anfühlen, sondern wie ein strategisches Gespräch, bei dem jede Antwort die nächste Frage sinnvoll verändert.
 
-Nach der Ausgabe der vollständigen Landingpage-Konzeption (Blöcke 1–11) stelle eine letzte Aktion bereit:
+AUSGABE NACH FRAGE 10 (kombinierte Interview-Import-Datei)
 
-TRANSKRIPT GENERIEREN
-Nach Abschluss des gesamten Konzepts biete an:
-„Soll ich die Journey als strukturiertes Transkript exportieren? (Demo-Format für Wiederverwendung in Konzeptfäden/Wireframe-Engine)"
-Wenn der Nutzer zustimmt, generiere ein strukturiertes Journey-Transkript im Markdown-Format nach dieser Vorlage und struktur:
+Gib nach Frage 10 GENAU EINE Markdown-Ausgabe aus, die beide folgenden Blöcke direkt nacheinander enthält — nicht zwei getrennte Nachrichten, nicht erst das Konzept mit einem optionalen Folgeangebot für das Transkript danach. Reihenfolge: zuerst der Journey-Transkript-Block, danach der Landingpage-Konzept-Block (Ebene 1 vor Ebene 3, passend zur logischen Herleitung).
+
+**Block 1 — Journey-Transkript** (beginnt mit der Überschrift `# Journey-Transkript – [Projekt-Name]`):
 * Header: Datum, Geführt mit, Prompt-Version
 * Einstieg (Interaktionsfluss-Auftakt) mit wörtlicher Frage und Nutzerantwort
 * Phase 1–3, Phase 4–6, Phase 7–9, Phase 10 – jeweils mit vollständigen Fragen, Optionen (A-F), gewählter Antwort (als Buchstabe + wörtlicher Text der Option, ODER `[frei]` + wörtliche freie Antwort)
 * Notizen zur Aufnahme: Beobachtungen zur adaptiven Logik (welche Antworten haben später Fragen geprägt?), Abweichungen vom Standard-Antwortformat, übersprungene oder zusätzliche Fragen
 
-Das generierte Transkript kann direkt als `demo_Journey-Transkript_[Projekt-Name]_[Datum].md` gespeichert und in den Konzeptfäden oder die Wireframe-Engine Projekte übernommen werden.
+**Block 2 — Landingpage-Konzept** (beginnt mit der Überschrift `# Landingpage-Konzept: [Projekt-Name]`, direkt im Anschluss an Block 1 in derselben Ausgabe): die vollständige Konzeption (Blöcke 1–11) wie oben beschrieben.
+
+Beide Block-Überschriften sind exakt wie oben angegeben zu übernehmen (kein abweichender Wortlaut) — sie dienen als Erkennungsmerkmal beim Import ins Tool.
+
+Die kombinierte Ausgabe kann direkt als `demo_Interview-Import_[Projekt-Name]_[Datum].md` gespeichert und in den Konzeptfäden oder die Wireframe-Engine Projekte übernommen werden (ein einzelner Upload statt zwei getrennter Dateien, siehe `docs/reference/Interview-Import-Vorlage.md`).

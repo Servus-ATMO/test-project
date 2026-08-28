@@ -1,8 +1,10 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: Deployed
+## Status: Planned
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-28 (Bugfix)
+**Last Updated:** 2026-08-28 (Refine)
+
+**Hinweis:** Die aktuell live deployte Version läuft weiterhin im alten Zwei-Datei-Format — dieser Spec-Stand beschreibt die per `/refine` (2026-08-28) beschlossene Umstellung auf ein Ein-Datei-Format und ist noch nicht implementiert. Status auf „Planned" gesetzt, da die Kernänderung (Datenmodell/Parsing-Aufteilung) eine neue `/architecture`-Runde für die betroffenen Teile braucht.
 
 ## Implementierungsnotizen
 - **Bugfix aus echtem Nutzungsfeedback (BUG-3, 2026-08-28):** Auf der Projekt-Detail-Seite zeigte die Journey-Übersicht für jede der zehn Fragen "Gestellt" und "Antwort" als Lücke, obwohl die Datei inhaltlich vollständig war (Bug-Report am realen Import von "1. Testkunde", per Screenshot auf der Import-Seite). Ursache: Der tatsächliche Output des externen Interview-Prompts weicht bei den nummerierten Fragen vom Wortlaut der `Journey-Transkript-Vorlage.md` ab — die Frage steht als reiner Freitext-Absatz direkt nach der "### Frage N"-Überschrift (kein `**Gestellt:**`-Label), die Optionen stehen als rohe `A) …`–`F) …`-Zeilen statt einer `**Optionen:**`-Liste, und die Antwort steht unter `**Gewählte Antwort:**` statt `**Antwort:**`. Der Parser kannte nur das Vorlagenformat und markierte dadurch beide Felder fälschlich als Lücke, obwohl `Gewählte Antwort` als eigenständiges, unerwartetes Feld korrekt mit Inhalt erschien — sichtbar daran, dass genau dieses Feld in der Vorschau echten Text zeigte, während die beiden erwarteten Felder daneben leer blieben. Fix in `src/lib/imports/parse-utils.ts`: neue Funktion `buildFrageFields()` (ersetzt den bisherigen generischen `buildFields()`-Aufruf für Journey-Fragen) unterscheidet jetzt bewusst zwischen "Label komplett abwesend" (Freitext-Fallback: Absatz vor der ersten `A)`-Optionszeile bzw. vor dem nächsten erkannten Label wird als Frage gewertet, `A)`–`F)`-Zeilen werden als Optionen gesammelt) und "Label vorhanden, aber Platzhalter" (bleibt wie bisher eine sichtbare Lücke) — und akzeptiert `Gewählte Antwort` als gleichwertigen Namen für `Antwort`, ohne es zusätzlich als separates Feld zu duplizieren. Das alte Vorlagenformat (`**Gestellt:**`/`**Optionen:**`/`**Antwort:**`) bleibt vollständig unterstützt, alle bestehenden Tests liefen unverändert grün. Root Cause bestätigt über SQL-Abgleich der bereits importierten `import_fields`-Zeilen aller 10 Frage-Einträge (100 % konsistentes Muster: `Gestellt`/`Antwort` = Lücke, `Gewählte Antwort` = gefüllt) sowie über die im tatsächlichen Prompt-Referenzdokument bestätigte `A)`–`F)`-Optionsschreibweise (ein Test gegen die exakte Original-Rohdatei war nicht möglich, da diese nicht im Repo oder in der DB als Rohtext vorliegt — nur die geparsten Felder sind gespeichert). Regressionsabdeckung: 3 neue Unit-Tests (`parse-utils.test.ts`, `buildFrageFields` direkt) + 1 neuer Integrationstest (`parse-journey.test.ts`, voller Parser-Durchlauf), plus ein neuer permanenter E2E-Test (`tests/PROJ-3-import-werkstatt.spec.ts`, Fixture `proj3-journey-real-format.md`) — echter Upload/Vorschau-Durchlauf im Browser gegen den lokalen Dev-Server, bestätigt live im DOM, dass Frage 1/2 vollständig als "found" erscheinen und die bewusst unbeantwortete Frage 3 weiterhin korrekt als Lücke markiert bleibt. **Wichtig:** Bereits gespeicherte Imports (z. B. "1. Testkunde") behalten die zum Importzeitpunkt geparsten Lücken, bis sie über den bestehenden "Erneut importieren"-Button neu eingelesen werden — dieser Fix wirkt nur auf neue bzw. erneute Imports, es gibt bewusst kein automatisches Nachparsen bestehender Datenbank-Zeilen im Hintergrund.
@@ -25,7 +27,7 @@
 - Requires: PROJ-17 (Kunden-/Projekt-Verwaltung) — Projekt-Detail-Seite (`/kunden/[kundeId]/[projektId]`) als Einstiegspunkt, Kunde/Projekt-Datenmodell
 
 ## User Stories
-- Als Agentur-Mitarbeiter möchte ich die beiden vom externen Interview-Prompt erzeugten Dateien (Journey-Transkript.md + Konzept.md) direkt auf der Projekt-Seite hochladen können, damit ich das Interview-Ergebnis ohne Umwege ins Tool bekomme.
+- Als Agentur-Mitarbeiter möchte ich die vom externen Interview-Prompt am Ende erzeugte **eine** kombinierte Datei (Journey-Transkript + Landingpage-Konzept in einem Dokument) direkt auf der Projekt-Seite hochladen können, damit ich das Interview-Ergebnis ohne Umwege und ohne zwei getrennte Uploads ins Tool bekomme.
 - Als Agentur-Mitarbeiter möchte ich vor der endgültigen Übernahme sehen, was das Tool aus den Dateien erkannt hat, damit mir Parsing-Fehler sofort auffallen, statt sie erst später in der Graph-Ansicht zu entdecken.
 - Als Agentur-Mitarbeiter möchte ich bei einer fehlerhaften oder falsch zugeordneten Datei eine klare Rückmeldung bekommen, damit ich weiß, was zu korrigieren ist.
 - Als Agentur-Mitarbeiter möchte ich ein Projekt erneut importieren können, wenn der externe Interview-Prompt verbessert wurde, ohne versehentlich bereits geleistete Anreicherungsarbeit zu verlieren.
@@ -36,49 +38,59 @@
 - Graph-/Sankey-Visualisierung der importierten Daten — PROJ-5
 - KI-Anreicherung (Ebene 2 Profildimensionen, Konflikterkennung, Impact-Texte) — PROJ-4
 - Wireframe-Erzeugung aus den importierten Content-Blöcken — PROJ-8
-- Getrennter/zeitversetzter Upload der beiden Dateien — bewusst nicht vorgesehen, die Dateien gehören inhaltlich zusammen
 - Mehrseiten-/Ebene-4-Struktur (Hub + Unterseiten) — PROJ-11
 - Manuelles Löschen nur des Imports ohne das ganze Projekt zu löschen — Re-Import deckt den „nochmal von vorne"-Fall bereits ab
+- **Altes Zwei-Datei-Format (Journey-Transkript.md + Konzept.md getrennt)** — bewusster Breaking Change ab `/refine` vom 2026-08-28 (siehe Decision Log): wird nicht mehr unterstützt, kein Parallelbetrieb beider Formate. Bereits importierte Daten im alten Format bleiben in der DB unverändert bestehen, nur ein Re-Import verlangt die neue kombinierte Datei
+- **Import-Pflicht beim Anlegen eines Projekts / gemeinsame Anlege+Upload-View** — gehört zu PROJ-17 (Projekt-Verwaltung), nicht zu PROJ-3; als Open Question hier vermerkt, eigene `/refine PROJ-17`-Runde folgt
 
 ## Acceptance Criteria
 
 **Format:** Angenommen [Vorbedingung] / Wenn [Aktion] / Dann [Ergebnis]
 
-- [ ] Angenommen der Nutzer befindet sich auf der Projekt-Detail-Seite eines Projekts ohne Import, wenn er beide Dateien (Journey-Transkript.md + Konzept.md) per Drag & Drop hochlädt, dann werden beide Dateien geparst und eine Vorschau der erkannten Fragen/Antworten und Abschnitte/Felder angezeigt, bevor irgendetwas endgültig gespeichert wird
-- [ ] Angenommen nur eine der beiden Dateien wurde ausgewählt, wenn der Nutzer versucht den Import zu starten, dann wird das verhindert mit dem Hinweis, dass beide Dateien benötigt werden
+- [ ] Angenommen der Nutzer befindet sich auf der Projekt-Detail-Seite eines Projekts ohne Import, wenn er die eine kombinierte Interview-Import-Datei per Drag & Drop hochlädt, dann wird sie geparst und eine Vorschau der erkannten Fragen/Antworten und Abschnitte/Felder (aus beiden enthaltenen Blöcken) angezeigt, bevor irgendetwas endgültig gespeichert wird
+- [ ] Angenommen die hochgeladene Datei enthält nur einen der beiden erwarteten Blöcke (z. B. Journey-Transkript ohne Landingpage-Konzept oder umgekehrt), wenn sie geprüft wird, dann erscheint eine klare Meldung, welcher Block fehlt, statt stillschweigend mit einer halb leeren Vorschau fortzufahren
 - [ ] Angenommen eine hochgeladene Datei ist keine `.md`-Datei, dann wird der Upload mit einer Fehlermeldung abgelehnt
-- [ ] Angenommen eine hochgeladene `.md`-Datei sieht inhaltlich eher wie das jeweils andere Dokument aus (z. B. Konzept-Struktur im Journey-Transkript-Slot), dann erscheint eine Warnung mit der Möglichkeit, trotzdem fortzufahren
 - [ ] Angenommen eine Datei weicht von der erwarteten Struktur ab (z. B. eine „Frage N" oder ein „Abschnitt N" fehlt), wenn sie geparst wird, dann werden erkannte Teile übernommen und nicht erkennbare Teile in der Vorschau deutlich als Lücke markiert
-- [ ] Angenommen in einer Datei ist praktisch keine erkennbare Struktur vorhanden, dann wird der Import mit einer klaren Fehlermeldung abgelehnt, statt eine fast leere Vorschau anzuzeigen
-- [ ] Angenommen die Vorschau sieht korrekt aus, wenn der Nutzer den Import bestätigt, dann werden alle Felder aus beiden Dateien vollständig strukturiert gespeichert (jedes `**Label:**`-Feld aus beiden Vorlagen, nicht nur die Fragen und die Seitenstruktur) und die Rohdateien zusätzlich unverändert im `imports`-Bucket abgelegt
+- [ ] Angenommen in der Datei ist praktisch keine erkennbare Struktur vorhanden (weder Journey- noch Konzept-Block), dann wird der Import mit einer klaren Fehlermeldung abgelehnt, statt eine fast leere Vorschau anzuzeigen
+- [ ] Angenommen die Vorschau sieht korrekt aus, wenn der Nutzer den Import bestätigt, dann werden alle Felder aus beiden Blöcken vollständig strukturiert gespeichert (jedes `**Label:**`-Feld aus beiden Vorlagen, nicht nur die Fragen und die Seitenstruktur) und die Rohdatei zusätzlich unverändert im `imports`-Bucket abgelegt
 - [ ] Angenommen der Import wurde erfolgreich übernommen, dann zeigt die Projekt-Detail-Seite eine strukturierte Lese-Übersicht der Journey (Fragen + Antworten) und des Konzepts (alle Abschnitte mit ihren Feldern) an
 - [ ] Angenommen für ein Projekt existiert bereits ein Import und es existieren bereits abhängige Daten (z. B. Ebene-2-Anreicherung aus PROJ-4), wenn erneut hochgeladen und die Vorschau bestätigt wird, dann wird vor dem endgültigen Übernehmen eine Warnung angezeigt, dass diese abhängigen Daten ungültig werden bzw. überschrieben werden, die aktiv bestätigt werden muss
 - [ ] Angenommen für ein Projekt existiert bereits ein Import ohne abhängige Daten, wenn erneut hochgeladen wird, dann läuft der Re-Import als normaler Ersatz-Import durch dieselbe Vorschau
-- [ ] Angenommen ein Netzwerk- oder Serverfehler tritt während Upload oder Parsen auf, dann erscheint eine Fehlermeldung, es werden keine Teildaten übernommen, und die bereits ausgewählten Dateien bleiben im Upload-Feld erhalten, sodass kein erneutes Auswählen nötig ist
+- [ ] Angenommen ein Netzwerk- oder Serverfehler tritt während Upload oder Parsen auf, dann erscheint eine Fehlermeldung, es werden keine Teildaten übernommen, und die bereits ausgewählte Datei bleibt im Upload-Feld erhalten, sodass kein erneutes Auswählen nötig ist
 
 ## Edge Cases
 - Was passiert, wenn die Journey mehr oder weniger als die im Beispiel gezeigten 10 Fragen enthält (adaptiver Prompt kann variieren)? → Wird unterstützt: Es werden so viele „Frage N"-Blöcke geparst, wie tatsächlich vorhanden sind, keine feste Annahme von genau 10.
-- Was passiert, wenn Konzept.md in Abschnitt 4 mehr oder weniger Abschnitte enthält als im Beispiel? → Ebenso variabel, alle vorhandenen „Abschnitt N"-Blöcke werden geparst.
+- Was passiert, wenn der Konzept-Block in Abschnitt 4 mehr oder weniger Abschnitte enthält als im Beispiel? → Ebenso variabel, alle vorhandenen „Abschnitt N"-Blöcke werden geparst.
 - Was passiert, wenn eine Antwort im `[frei]`-Format vorliegt statt Buchstabe(n) + Optionstext? → Wird korrekt als Freitext-Antwort erkannt und gespeichert, zählt nicht als Lücke.
-- Was passiert, wenn ein Feld in Konzept.md explizit „entfällt"/„keiner"/„keine"/„kein Medium" enthält? → Wird als gültiger, bewusst leerer Wert gespeichert, nicht als Parsing-Lücke markiert (Unterschied zu einem tatsächlich fehlenden Feld).
+- Was passiert, wenn ein Feld im Konzept-Block explizit „entfällt"/„keiner"/„keine"/„kein Medium" enthält? → Wird als gültiger, bewusst leerer Wert gespeichert, nicht als Parsing-Lücke markiert (Unterschied zu einem tatsächlich fehlenden Feld).
 - Was passiert, wenn zwei Mitarbeiter gleichzeitig für dasselbe Projekt importieren? → Kein Konfliktschutz, letzter Speicherstand gewinnt (last-write-wins, konsistent mit PROJ-17).
 - Was passiert mit ungewöhnlich großen Dateien (z. B. sehr langes Interview)? → Groß­zügiges, aber vorhandenes Limit (siehe Open Questions), da es sich um reinen Text handelt.
+- **Neu:** Was passiert, wenn beide Blöcke vorhanden, aber in vertauschter Reihenfolge sind (Konzept vor Journey)? → Wird unterstützt: Die Erkennung sucht nach den beiden bekannten H1-Überschriften unabhängig von ihrer Reihenfolge, keine feste Positionsannahme.
+- **Neu:** Was passiert mit einer Datei im alten Zwei-Datei-Format (z. B. jemand lädt versehentlich nur die alte Journey-Transkript.md hoch)? → Wird als „nur ein Block gefunden" behandelt (siehe neue AC), nicht als Sonderfall des alten Formats erkannt oder migriert — bewusster Breaking Change, siehe Decision Log.
 
 ## Technical Requirements (optional)
 - Security: Upload/Import nur innerhalb des geschützten Bereichs, gleiche Zugriffsregeln wie PROJ-17 (alle eingeloggten Mitarbeiter, Shared Visibility)
-- Speicherung: Rohdateien im bestehenden `imports`-Bucket (siehe PROJ-1), zusätzlich vollständig strukturiertes Parsing beider Dateien in die Datenbank
+- Speicherung: **eine** Rohdatei im bestehenden `imports`-Bucket (siehe PROJ-1), zusätzlich vollständig strukturiertes Parsing beider enthaltenen Blöcke in die Datenbank
 
 ## Open Questions
 - [x] ~~Genaue Dateigrößen-Obergrenze pro Datei~~ — bei `/architecture` auf 5 MB je Datei festgelegt, siehe Tech Design
 - [x] ~~Exaktes Datenmodell/Tabellenstruktur für die granularen Felder~~ — bei `/architecture` als vierstufiges Modell (Import → Abschnitt → Eintrag → Feld) festgelegt, siehe Tech Design
 - [x] ~~Lösch-Schutz-Verschärfung~~ — wurde zwischenzeitlich per `/refine PROJ-17` + `/backend PROJ-17` umgesetzt und deployt (Kunde/Projekt muss erst archiviert sein, bevor endgültiges Löschen möglich ist)
 - [ ] Wie sich ein Re-Import auf bereits bestehende Ebene-2-Daten (PROJ-4) auswirkt (löschen vs. als veraltet markieren) — kann erst entschieden werden, wenn PROJ-4 sein eigenes Datenmodell hat; die „hat abhängige Daten"-Prüfung in PROJ-3 ist bewusst als erweiterbarer Baustein angelegt (siehe Tech Design), analog zum bereits etablierten Muster aus PROJ-17
+- [ ] **Neu (`/refine`, 2026-08-28):** Import-Pflicht beim Anlegen eines Projekts + gemeinsame Anlege+Upload+Vorschau-View — betrifft PROJ-17 (Projekt-Verwaltung), nicht PROJ-3 selbst. Wird ermöglicht, sobald der Ein-Datei-Import umgesetzt ist (ein Upload-Feld statt zwei passt einfacher in ein Anlage-Formular). Eigene `/refine PROJ-17`-Runde nötig, sobald diese PROJ-3-Änderung durch `/architecture`/`/backend`/`/frontend`/`/qa` gelaufen ist.
+- [ ] **Neu (`/refine`, 2026-08-28):** Genaue Exportanweisung im externen Prompt für die kombinierte Datei (Dateiname-Konvention, exakte Reihenfolge/Übergangstext zwischen den beiden Blöcken) — grober Rahmen in dieser Runde in `Adaptiver-Landingpage-Konzeptions-Prompt-v2.md` festgelegt, Feinschliff ggf. bei tatsächlicher Nutzung des Prompts
 
 ## Decision Log
 
 ### Product Decisions
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| **`/refine` (2026-08-28): Journey-Transkript und Landingpage-Konzept werden zu EINER hochzuladenden Datei zusammengelegt** (statt zwei separater Dateien/Upload-Slots) | Konsequente Fortführung der bereits bestehenden Entscheidung „die Dateien gehören inhaltlich zusammen" — das externe Prompt-Ergebnis besteht ohnehin immer aus beidem, ein einzelner Upload vereinfacht die Bedienung und ist Voraussetzung dafür, den Import künftig direkt in die Projekt-Anlage (PROJ-17) zu integrieren | 2026-08-28 |
+| Bewusster Breaking Change: kein Parallelbetrieb mit dem alten Zwei-Datei-Format | Frühe Phase, wenige echte Kunden — der Aufwand, zwei Formate dauerhaft zu unterscheiden und zu pflegen, steht in keinem Verhältnis zum Nutzen; bereits importierte Daten im alten Format bleiben unangetastet in der DB bestehen | 2026-08-28 |
+| Kombiniertes Dateiformat: Journey-Vorlage-Inhalt gefolgt vom Konzept-Vorlage-Inhalt in einer Datei, Erkennung über die bereits vorhandenen H1-Überschriften der beiden Vorlagen (kein neues Trennzeichen nötig) | Minimal-invasiv — die beiden bestehenden, bereits granular geparsten Vorlagen (`Journey-Transkript-Vorlage.md`, `Landingpage-Konzept-Vorlage.md`) und ihre Parser bleiben inhaltlich unverändert; nur eine dünne Aufteilungs-Schicht kommt davor | 2026-08-28 |
+| Neue, dünne Referenzdatei `docs/reference/Interview-Import-Vorlage.md` dokumentiert nur die Zusammenlegung, dupliziert nicht den Inhalt der beiden bestehenden Vorlagen | Vermeidet, dass zwei Kopien desselben Formats auseinanderlaufen können | 2026-08-28 |
+| Externer Referenz-Prompt (`Adaptiver-Landingpage-Konzeptions-Prompt-v2.md`) wird im selben Zug angepasst, statt als separate Folgearbeit | Ohne die Prompt-Anpassung gäbe es keine reale Quelle für das neue Ein-Datei-Format — Spec und Prompt müssen zusammenpassen | 2026-08-28 |
+| Import-Pflicht bei Projekt-Anlage (PROJ-17) bewusst NICHT Teil dieser Runde, nur als Open Question vermerkt | Eigenständige PROJ-17-Entscheidung, die erst sinnvoll ist, sobald der Ein-Datei-Import steht; vermeidet, zwei Features in einer `/refine`-Runde zu vermischen | 2026-08-28 |
 | Upload als Drag & Drop beider Dateien gemeinsam auf der bestehenden Projekt-Detail-Seite | Natürlichster Anknüpfungspunkt an bereits Gebautes (PROJ-1-Storage, PROJ-17-Platzhalter); entspricht dem realen Workflow, in dem beide Dateien bereits fertig vorliegen | 2026-08-25 |
 | Beide Dateien müssen zusammen hochgeladen werden, kein getrennter/zeitversetzter Import | Die Dateien gehören inhaltlich untrennbar zusammen, ein getrennter Import würde nur nutzlose Zwischenzustände erzeugen | 2026-08-25 |
 | Vorschau vor endgültiger Übernahme (Human-in-the-loop) | Quelldateien haben gewisse Formatfreiheit — ein Parsing-Fehler soll auffallen, bevor er unbemerkt ins Konzept einfließt | 2026-08-25 |

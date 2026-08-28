@@ -12,7 +12,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 |----------|---------|--------|
 | P0 (MVP) | Supabase Infrastructure Setup | Deployed ([PROJ-1](../features/PROJ-1-supabase-infrastructure-setup.md)) |
 | P0 (MVP) | Agentur-Login | Deployed ([PROJ-2](../features/PROJ-2-agentur-login.md)) |
-| P0 (MVP) | Import-Werkstatt (Journey-Transkript.md + Konzept.md vollständig parsen) | Deployed ([PROJ-3](../features/PROJ-3-import-werkstatt.md)) |
+| P0 (MVP) | Import-Werkstatt (eine kombinierte Interview-Import-Datei vollständig parsen) | Planned ([PROJ-3](../features/PROJ-3-import-werkstatt.md)) |
 | P0 (MVP) | KI-Anreicherung (Ebene 2 Profildimensionen, Kanten, Konflikterkennung, Impact-Texte) | Deployed ([PROJ-4](../features/PROJ-4-ki-anreicherung.md)) |
 | P0 (MVP) | DAG/Sankey-Graph-Visualisierung (4 Ebenen, Dossier-Panel) | Planned ([PROJ-5](../features/PROJ-5-dag-sankey-visualisierung.md)) |
 | P0 (MVP) | Branch-Datenmodell (Antworten ändern, Original/Branch-Vergleich) | Planned |
@@ -32,7 +32,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 Jedes importierte Kunden-Interview lässt sich vollständig zu einem Konzept-Graph + exportierbarem Wireframe verarbeiten. Das validierte Konzept/Wireframe verkürzt die Zeit bis zur Projekt-Kalkulation spürbar; die Kalkulation selbst wird durch die standardisierte Content-Block-Struktur zunehmend standardisierbar — insgesamt schnellere, effizientere und bessere Projektumsetzung.
 
 ## Constraints
-Solo-/Kleinteam-Projekt, kein hartes Deadline-Datum, iterativer Aufbau. Backend: Supabase (PostgreSQL + Auth). Design: Tailwind + shadcn/ui Defaults (hell), kein eigenes Design-System. Das Interview selbst läuft extern (bestehender Prompt-Prozess) — das Tool startet beim Import der resultierenden `.md`-Dateien.
+Solo-/Kleinteam-Projekt, kein hartes Deadline-Datum, iterativer Aufbau. Backend: Supabase (PostgreSQL + Auth). Design: Tailwind + shadcn/ui Defaults (hell), kein eigenes Design-System. Das Interview selbst läuft extern (bestehender Prompt-Prozess) — das Tool startet beim Import der einen resultierenden `.md`-Datei (Journey-Transkript + Landingpage-Konzept kombiniert, siehe PROJ-3).
 
 ## Non-Goals
 Kein Self-Service-Interview-Frontend im Tool (bleibt extern). Keine Live-Kopplung Wireframe↔Ebene-2-Gewichtung (Fernziel, spätere Phase). Kein Fragenkatalog-Editor, keine anderen Projekttypen als Landingpage (diese Version). Kein Zurückschreiben von Anpassungen in echte Wireframe-Dateien — nur Simulation/eigenständiger Export. Kein Reuse des alten Prototyp-/Engine-Codes — Neuaufbau, alte Stände dienen nur als inhaltliche Referenz.
