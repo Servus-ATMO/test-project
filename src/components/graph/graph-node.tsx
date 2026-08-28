@@ -6,16 +6,19 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { GraphNodeData } from '@/lib/graph/types'
 
+export type HighlightState = 'selected' | 'active' | 'dim' | 'none'
+
 export interface GraphFlowNodeData extends Record<string, unknown> {
   node: GraphNodeData
   expanded?: boolean
+  highlight?: HighlightState
 }
 
 // Ein gemeinsamer Knoten-Renderer fuer alle vier Knotentypen (Themenblock,
 // Frage, Dimension, Content-Block) - der eigentliche Inhalt unterscheidet
 // sich je Typ, aber Rahmen/Badges/Handles folgen demselben Muster.
 export function GraphNode({ data }: NodeProps & { data: GraphFlowNodeData }) {
-  const { node } = data
+  const { node, highlight = 'none' } = data
 
   const hasGapBadge =
     (node.type === 'frage' && (node.frageStatus === 'gap' || node.antwortStatus === 'gap')) ||
@@ -24,8 +27,11 @@ export function GraphNode({ data }: NodeProps & { data: GraphFlowNodeData }) {
   return (
     <div
       className={cn(
-        'w-56 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm',
-        node.type !== 'themenblock' && node.hasConflict && 'border-destructive'
+        'w-56 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm transition-opacity',
+        node.type !== 'themenblock' && node.hasConflict && 'border-destructive',
+        highlight === 'selected' && 'border-orange-500 ring-2 ring-orange-500',
+        highlight === 'active' && 'border-orange-400',
+        highlight === 'dim' && 'opacity-30'
       )}
     >
       {node.type !== 'themenblock' && <Handle type="target" position={Position.Left} />}
