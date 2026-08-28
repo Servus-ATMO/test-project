@@ -78,3 +78,25 @@ export function computeHighlight(
 
   return { activeNodeIds, activeEdgeIds }
 }
+
+// Globaler Persona-Filter (Nutzer-Feedback 2026-08-28): highlightet alle
+// Verbindungen in eine bestimmte Persona, indem computeHighlight() fuer jede
+// Dimensionsinstanz dieser Persona aufgerufen und deren Ergebnisse
+// vereinigt werden - keine eigene Traversierungslogik noetig.
+export function computeHighlightForPersona(
+  personaName: string,
+  model: GraphModel,
+  ebene2Visible: boolean
+): HighlightResult {
+  const activeNodeIds = new Set<string>()
+  const activeEdgeIds = new Set<string>()
+
+  for (const dimension of model.dimensionen) {
+    if (dimension.personaName !== personaName) continue
+    const result = computeHighlight(dimension.id, model, ebene2Visible)
+    for (const id of result.activeNodeIds) activeNodeIds.add(id)
+    for (const id of result.activeEdgeIds) activeEdgeIds.add(id)
+  }
+
+  return { activeNodeIds, activeEdgeIds }
+}

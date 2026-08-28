@@ -92,3 +92,45 @@ export function GraphNode({ data }: NodeProps & { data: GraphFlowNodeData }) {
     </div>
   )
 }
+
+export interface DimensionGroupFlowNodeData extends Record<string, unknown> {
+  dimensionName: string
+  count: number
+  expanded: boolean
+  highlight?: HighlightState
+}
+
+// Sammel-Knoten fuer wiederkehrende Ebene-2-Dimensionen (dieselbe
+// Dimension, mehrere Personas) - Nutzer-Feedback 2026-08-28: "Ebene-2
+// wiederkehrende Elemente kompakter machen, kollabierbar wie Ebene 1".
+// Bewusst als eigener React-Flow-Knotentyp statt eines fuenften
+// GraphNodeData-Mitglieds - der Gruppen-Knoten ist eine reine UI-
+// Zusammenfassung existierender DimensionNode-Instanzen, kein eigenes
+// Domain-Konzept (anders als Themenblock, der einen echten Abschnitt aus
+// den Importdaten abbildet). Klick auf einen Gruppen-Knoten klappt nur
+// auf/zu, oeffnet nie das Dossier (analog zu Themenblock).
+export function DimensionGroupNode({ data }: NodeProps & { data: DimensionGroupFlowNodeData }) {
+  const { dimensionName, count, expanded, highlight = 'none' } = data
+
+  return (
+    <div
+      className={cn(
+        'w-56 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm transition-opacity',
+        highlight === 'active' && 'border-orange-400',
+        highlight === 'dim' && 'opacity-30'
+      )}
+    >
+      <Handle type="target" position={Position.Left} />
+      <Handle type="source" position={Position.Right} />
+      <div className="flex items-center gap-1 text-sm font-medium">
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0" />
+        )}
+        <span className="truncate">{dimensionName}</span>
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{count}</span>
+      </div>
+    </div>
+  )
+}

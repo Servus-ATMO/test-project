@@ -190,21 +190,35 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   await expect(page.locator('.react-flow__edge').first()).toBeVisible()
 
   // --- AC: Ebene-2-Schalter blendet Profildimension-Knoten ein ---
-  await page.getByRole('switch').click()
+  await page.getByLabel('Profildimensionen (Ebene 2) anzeigen').click()
   await expect(page.getByText('Business Goal').first()).toBeVisible()
 
-  // --- AC: Multi-Persona - zwei "Business Goal"-Knoten fuer zwei Personas ---
-  const businessGoalNodes = page.locator('.react-flow__node').filter({ hasText: 'Business Goal' })
-  await expect(businessGoalNodes).toHaveCount(2)
-  await expect(page.getByText('Direktkäufer').first()).toBeVisible()
-  await expect(page.getByText('Influencer-Partner').first()).toBeVisible()
+  // --- Nutzer-Feedback 2026-08-28: wiederkehrende Dimensionen (mehrere
+  // Personas) werden standardmaessig als kollabierte Gruppe gezeigt statt
+  // einzelner Knoten - erst aufklappen zeigt beide Instanzen.
+  const businessGoalGroup = page.locator('.react-flow__node').filter({ hasText: 'Business Goal' }).first()
+  await expect(businessGoalGroup.getByText('2', { exact: true })).toBeVisible()
+  await businessGoalGroup.click()
+
+  // --- AC: Multi-Persona - je ein eigener "Business Goal"-Knoten pro Persona ---
+  // ("Direktkäufer" allein waere mehrdeutig - passt auch auf "Target Audience",
+  // das denselben Persona-Namen hat, siehe Fixture)
+  const direktkaeuferNode = page
+    .locator('.react-flow__node')
+    .filter({ hasText: 'Business Goal' })
+    .filter({ hasText: 'Direktkäufer' })
+  const influencerNode = page
+    .locator('.react-flow__node')
+    .filter({ hasText: 'Business Goal' })
+    .filter({ hasText: 'Influencer-Partner' })
+  await expect(direktkaeuferNode).toBeVisible()
+  await expect(influencerNode).toBeVisible()
 
   // --- AC: Gap-Dimension zeigt Luecken-Badge statt ausgeblendet zu werden ---
-  const gapDimensionNode = businessGoalNodes.filter({ hasText: 'Influencer-Partner' })
-  await expect(gapDimensionNode.getByText('Lücke')).toBeVisible()
+  await expect(influencerNode.getByText('Lücke')).toBeVisible()
 
   // --- AC: Klick auf Profildimension-Knoten -> Dossier zeigt Herkunft + Wirkung ---
-  await businessGoalNodes.filter({ hasText: 'Direktkäufer' }).click()
+  await direktkaeuferNode.click()
   await expect(page.getByText('Herkunft (Journey-Antworten)')).toBeVisible()
   await expect(page.getByText('Wirkung (geprägte Content-Blöcke)')).toBeVisible()
   await expect(page.getByText('Direktverkauf maximieren')).toBeVisible()
@@ -232,7 +246,7 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   await page.getByRole('button', { name: 'Schließen' }).click()
 
   // --- AC: Klick hebt verbundene Knoten/Kanten hervor (Herkunft/Wirkung-Highlight) ---
-  await businessGoalNodes.filter({ hasText: 'Direktkäufer' }).click()
+  await direktkaeuferNode.click()
   await expect
     .poll(
       async () =>
@@ -245,7 +259,7 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   await page.getByRole('button', { name: 'Schließen' }).click()
 
   // --- AC: Ebene 2 wieder ausblenden -> Profildimension-Knoten verschwinden, komprimierte Kante bleibt ---
-  await page.getByRole('switch').click()
+  await page.getByLabel('Profildimensionen (Ebene 2) anzeigen').click()
   await expect(page.getByText('Business Goal').first()).toHaveCount(0)
   await expect(page.locator('.react-flow__edge').first()).toBeVisible()
 
@@ -257,6 +271,6 @@ test('mobile viewport (375px): graph page renders and the switch is usable', asy
   await login(page)
   await page.goto(`/kunden/${clientId}/${projectId}/graph`, { waitUntil: 'networkidle' })
   await expect(page.getByText('Konzept-Graph')).toBeVisible()
-  await expect(page.getByRole('switch')).toBeVisible()
+  await expect(page.getByLabel('Profildimensionen (Ebene 2) anzeigen')).toBeVisible()
   await expect(page.locator('.react-flow')).toBeVisible()
 })
