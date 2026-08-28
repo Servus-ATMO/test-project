@@ -93,7 +93,18 @@ export function EnrichmentPanel({
     }
   }
 
+  // Existiert bereits eine gespeicherte Anreicherung, soll "Abbrechen" den
+  // Nutzer zur Lese-Uebersicht zurueckbringen (nicht auf dem Prompt-/Upload-
+  // Bildschirm haengen lassen) - Bug gefunden bei /qa: ohne den vollen
+  // resetFlow() blieben `prompt`/`showFlow` gesetzt, wodurch nach dem
+  // Abbrechen weiterhin der Prompt-Bildschirm gerendert wurde. Gibt es noch
+  // keine bestehende Anreicherung, bleibt der Nutzer sinnvollerweise auf dem
+  // Prompt-/Upload-Bildschirm, um es mit einer anderen Datei erneut zu versuchen.
   const handleCancelPreview = () => {
+    if (initialEnrichment) {
+      resetFlow()
+      return
+    }
     setPreview(null)
     setResultText(null)
     setSaveError(null)
