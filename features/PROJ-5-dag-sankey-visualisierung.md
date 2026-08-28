@@ -1,8 +1,8 @@
 # PROJ-5: DAG/Sankey-Graph-Visualisierung
 
-## Status: Planned
+## Status: Architected
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-28
+**Last Updated:** 2026-08-28 (Architecture)
 
 ## Dependencies
 - Requires: PROJ-4 (KI-Anreicherung) — liefert Ebene 2 (Profildimensionen inkl. Persona-Instanzen), die Kanten `informs`/`shapes` und die Konflikterkennung
@@ -96,12 +96,64 @@ Kein Content-Block lässt sich direkt aus einer Frage ableiten — der Weg führ
 <!-- Added by /architecture -->
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| Neues Paket `@xyflow/react` (React Flow) für das Knoten-/Kanten-Diagramm | Bringt Zoom/Pan, Kanten-Routing und Klick-Handling für genau diese Art von Diagramm bereits mit — spart erhebliche Eigenentwicklung gegenüber einem CSS/SVG-Eigenbau. Genutzt nur zum Anzeigen: Positionen werden selbst nach der fachlichen Spalten-Logik berechnet, kein automatisches Kraft-Layout, kein Drag&Drop (Graph ist rein lesend). **Zukunftssicherheit:** Knoten-Dragging und Kanten-Neuverbindung sind in React Flow bereits eingebaut (nur für PROJ-5 deaktiviert) und Knoten sind frei gestaltbare React-Komponenten — spätere Anforderungen wie Antworten-Branching (PROJ-6), Konfliktlösung per Drag (PROJ-7) oder ein Gewichtungs-Regler direkt im Knoten (Phase-2-Fernziel „Gewichtung → Wireframe live") lassen sich damit nachrüsten, ohne die Bibliothek zu wechseln | 2026-08-28 |
+| Keine neue Datenbank-Query — Graph-Seite nutzt ausschließlich die bereits bestehenden `getImportForProject()`/`getEnrichmentForProject()`-Funktionen aus PROJ-3/PROJ-4 | Beide liefern bereits alle Rohdaten, die der Graph braucht (Ebene 1/3 aus dem Import, Ebene 2 + Kanten + Konflikte aus der Anreicherung) — keine neue Tabelle, Migration oder RLS-Policy nötig | 2026-08-28 |
+| Neue, reine Ableitungs-Bibliothek (analog zu `src/lib/imports/`, `src/lib/enrichment/`) übernimmt die Umrechnung von Import + Anreicherung in das anzeigefertige Knoten-/Kanten-Modell | Hält die fachliche Logik (Spalten-Zuordnung, Ebene-2-Kompression, Gap-/Konflikt-Markierung, isolierte Knoten) als reine, unabhängig testbare Funktionen getrennt von der reinen Rendering-Komponente — gleiches Muster wie `parse-enrichment.ts` | 2026-08-28 |
+| Sowohl die normalen als auch die komprimierten Kanten (Ebene 2 ausgeblendet) werden beim Aufbau des Graph-Modells einmal vorab berechnet, nicht erst beim Klick auf den Schalter | Der Schalter muss nur zwischen zwei bereits fertigen Kanten-Listen umschalten, statt bei jedem Klick neu zu rechnen — vermeidet spürbare Verzögerung bei vielen Knoten | 2026-08-28 |
+| Dossier-Panel als `Sheet` (bereits im Projekt als `sheet.tsx` vorhanden) statt neuer Komponente | Kein neues Paket nötig; `Sheet` verhält sich auf schmalen Bildschirmen (375px) automatisch als vollflächiges Overlay statt schmalem Seitenpanel — löst die Mobile-Frage aus den Edge Cases ohne Sonderlogik | 2026-08-28 |
+| Seite als Server Component (liest die Daten wie die bestehende Projekt-Detailseite), Graph selbst als Client Component | Zoom/Pan, Knoten-Klicks, Ebene-2-Schalter und Aufklappen von Themenblöcken brauchen Interaktivität im Browser — gleiches Aufteilungsmuster wie `EnrichmentPanel`/`ImportPanel` (Server holt Daten, Client-Komponente übernimmt Darstellung + Interaktion) | 2026-08-28 |
 
 ---
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### A) Komponenten-Struktur
+
+```
+Graph-Unterseite (/kunden/[kundeId]/[projektId]/graph)
+├── Kein-Import-Hinweis
+│   └── (nur wenn kein Import vorliegt) Text + Link zurück zur Projekt-Detailseite/Import-Werkstatt
+├── Keine-Anreicherung-Hinweis
+│   └── (nur wenn Import, aber keine Anreicherung vorliegt) zeigt Ebene 1+3 als unverbundene Spalten + Hinweis, zuerst die KI-Anreicherung durchzuführen
+└── Graph-Ansicht (Import + Anreicherung vorhanden)
+    ├── Spalten-Kopfzeile
+    │   ├── Spaltentitel "Themenblöcke" / "Profildimensionen" / "Content-Blöcke"
+    │   └── Ebene-2-Schalter (Ein/Aus)
+    ├── Graph-Leinwand (zoom-/schwenkbar)
+    │   ├── Spalte Ebene 1: Themenblock-Knoten (Einstieg, Phase 1–3/4–6/7–9/10), je aufklappbar zu den zugehörigen Frage-Knoten
+    │   ├── Spalte Ebene 2: Profildimension-Knoten (ein Knoten je Dimension+Persona-Instanz, „Umsetzungsrahmen" ohne Persona), mit Lücken-Badge bzw. Konflikt-Badge wo zutreffend — komplett ausblendbar über den Schalter
+    │   ├── Spalte Ebene 3: Content-Block-Knoten (aus Abschnitt „Seitenstruktur"), inkl. isolierter Knoten ohne eingehende Kante, mit Konflikt-Badge wo zutreffend
+    │   └── Verbindungslinien zwischen den Spalten (normale Kanten bei eingeblendeter Ebene 2, direkte komprimierte Kanten bei ausgeblendeter Ebene 2)
+    └── Dossier-Panel (Seitenpanel, öffnet bei Klick auf einen Knoten)
+        ├── Themenblock-/Frage-Knoten: Frage- und Antwort-Text im Klartext + Wirkung vorwärts (beeinflusste Dimensionen)
+        ├── Profildimension-Knoten: Quelle rückwärts (Frage/Antwort) + Wirkung vorwärts (geprägte Content-Blöcke), inkl. Impact-Text und Gewichtung je Verbindung
+        ├── Content-Block-Knoten: Herkunft rückwärts (alle prägenden Dimensionen mit Persona, Impact-Text, Gewichtung)
+        └── Konflikt-Abschnitt (nur bei konfliktmarkierten Knoten): Konflikt-Beschreibung als Text, keine Lösungsoptionen
+```
+
+### B) Datenmodell (in einfacher Sprache)
+
+Der Graph speichert **nichts Neues** — er ist eine reine Ansicht auf bereits vorhandene Daten aus PROJ-3 (Import) und PROJ-4 (Anreicherung):
+
+- **Ebene-1-Knoten** entstehen aus den bereits importierten Journey-Themenblöcken und -Fragen.
+- **Ebene-2-Knoten** entstehen aus den bereits gespeicherten Profildimension-Werten der Anreicherung — für jede tatsächlich gespeicherte Dimension+Persona-Kombination ein eigener Knoten, inklusive der als „nicht ableitbar" markierten (Lücken-Badge).
+- **Ebene-3-Knoten** entstehen aus den bereits importierten Content-Blöcken (Abschnitt „Seitenstruktur").
+- **Kanten** entstehen aus den bereits gespeicherten `informs`- und `shapes`-Verknüpfungen der Anreicherung.
+- **Konflikt-Markierungen** entstehen aus den bereits gespeicherten, erkannten Konflikten der Anreicherung.
+
+Alles wird bei jedem Seitenaufruf frisch aus den bestehenden Tabellen gelesen und im Browser zu einem anzeigefertigen Knoten-/Kanten-Modell zusammengesetzt — dadurch zeigt der Graph immer den aktuellen Stand, auch nach einem Re-Import oder einer erneuten Anreicherung, ohne eigene Aktualisierungs-Logik.
+
+### C) Tech-Entscheidungen (Begründung)
+
+- **React Flow für das Diagramm:** Statt Zoom/Pan, Kantenlinien und Klick-Erkennung von Grund auf selbst zu bauen, übernimmt eine etablierte, spezialisierte Bibliothek diese Grundfunktionen. Wir verwenden sie ausschließlich zum Anzeigen fester, selbst berechneter Positionen — kein automatisches Layout, kein Verschieben per Maus, da der Graph rein lesend ist.
+- **Kein neuer Datenbankzugriff:** Die bereits für PROJ-3/PROJ-4 gebauten Funktionen zum Laden von Import und Anreicherung liefern bereits alles Nötige. Für den Graph kommt nur eine neue, reine Umrechnungs-Logik hinzu (aus den Rohdaten wird das Knoten-/Kanten-Modell abgeleitet) — kein neuer Speicherpfad.
+- **Server holt Daten, Client-Komponente zeigt sie interaktiv an:** Gleiches Aufteilungsmuster wie bei der Import-Werkstatt und der KI-Anreicherung — vermeidet unnötige Rundreisen zum Server bei jeder Nutzer-Interaktion (Klick, Zoom, Ebene-2-Schalter).
+- **Dossier-Panel als vorhandene `Sheet`-Komponente:** Bereits im Projekt vorhanden, verhält sich auf kleinen Bildschirmen automatisch sinnvoll (vollflächiges Overlay statt schmalem Seitenpanel).
+
+### D) Abhängigkeiten (neue Pakete)
+
+- `@xyflow/react` — Bibliothek für interaktive Knoten-/Kanten-Diagramme (Zoom/Pan, Kantenlinien, Klick-Handling)
 
 ## QA Test Results
 _To be added by /qa_
