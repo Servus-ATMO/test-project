@@ -279,7 +279,15 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
       if (!highlight) return 'none'
       if (kind === 'themenblock') return themenblockHasActiveChild.has(nodeId) ? 'active' : 'dim'
       if (kind === 'dimensiongroup') return dimensionGroupHasActiveChild.has(nodeId) ? 'active' : 'dim'
-      if (selectedNode && nodeId === selectedNode.id) return 'selected'
+      // Der "selected"-Ring (volle Sichtbarkeit fuer den angeklickten Knoten)
+      // gilt nur, wenn die Knoten-Auswahl selbst die Highlight-Quelle ist -
+      // ist ein Persona-Filter aktiv, bleibt dieser die alleinige Quelle
+      // (siehe oben), der geoeffnete Knoten ist dann nur ein unabhaengiges
+      // Dossier-Detail und folgt wie jeder andere Knoten der aktiv/ausgegraut-
+      // Regel des Filters (Nutzer-Feedback 2026-08-29: ein Knoten ausserhalb
+      // der gefilterten Persona soll auch bei geoeffnetem Dossier ausgegraut
+      // bleiben, nicht durch den Klick "freigestellt" werden).
+      if (!selectedPersona && selectedNode && nodeId === selectedNode.id) return 'selected'
       return highlight.activeNodeIds.has(nodeId) ? 'active' : 'dim'
     }
 
