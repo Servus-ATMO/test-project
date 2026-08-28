@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/auth/require-auth'
+import { hasEnrichmentForProject } from '@/lib/enrichment/queries'
 import { flattenParsedDocument } from './db'
 import { checkCrossFormat } from './format-detect'
 import { parseJourney } from './parse-journey'
@@ -65,12 +66,13 @@ export async function checkImportFiles(
   return { status: 'ok', preview: { journey, konzept }, warnings }
 }
 
-// Aktuell immer "nein" - es gibt noch keine abhaengigen Tabellen (Ebene-2-
-// Anreicherung -> PROJ-4). Eigenstaendige Funktion, damit PROJ-4 hier
-// einfach eine Bedingung ergaenzen kann, ohne den Re-Import-Ablauf neu zu
-// entwerfen (siehe PROJ-3 Tech Design).
-export async function hasDependentImportData(_projectId: string): Promise<boolean> {
-  return false
+// PROJ-4 (KI-Anreicherung) ist die erste abhaengige Tabelle - siehe PROJ-3
+// Tech Design ("hat abhaengige Daten"-Pruefung als eigenstaendige,
+// erweiterbare Funktion angelegt, genau fuer diesen Fall). Ein Re-Import
+// wuerde sonst eine bestehende Ebene-2-Anreicherung stillschweigend
+// verwaisen lassen, ohne dass die PROJ-3-Warnung greift.
+export async function hasDependentImportData(projectId: string): Promise<boolean> {
+  return hasEnrichmentForProject(projectId)
 }
 
 export type SaveImportResult =

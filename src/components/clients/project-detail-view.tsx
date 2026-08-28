@@ -6,16 +6,19 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProjectFormDialog } from './project-form-dialog'
 import { ImportPanel } from '@/components/imports/import-panel'
+import { EnrichmentPanel } from '@/components/enrichment/enrichment-panel'
 import type { Client, Project } from '@/lib/clients/types'
 import type { ParsedImport } from '@/lib/imports/types'
+import type { Enrichment } from '@/lib/enrichment/types'
 
 interface ProjectDetailViewProps {
   client: Client
   project: Project
   parsedImport: ParsedImport | null
+  enrichment: Enrichment | null
 }
 
-export function ProjectDetailView({ client, project, parsedImport }: ProjectDetailViewProps) {
+export function ProjectDetailView({ client, project, parsedImport, enrichment }: ProjectDetailViewProps) {
   return (
     <div className="space-y-6">
       <Link
@@ -50,6 +53,14 @@ export function ProjectDetailView({ client, project, parsedImport }: ProjectDeta
       </Card>
 
       <ImportPanel clientId={client.id} projectId={project.id} initialImport={parsedImport} />
+
+      <EnrichmentPanel
+        clientId={client.id}
+        projectId={project.id}
+        projectName={project.name}
+        hasImport={parsedImport !== null}
+        initialEnrichment={enrichment}
+      />
     </div>
   )
 }

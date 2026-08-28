@@ -1,8 +1,21 @@
 # PROJ-4: KI-Anreicherung
 
-## Status: Planned
+## Status: In Progress
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-28
+**Last Updated:** 2026-08-28 (Backend)
+
+## Implementierungsnotizen
+- **Datenmodell live umgesetzt:** fünf neue Tabellen (`enrichments`, `enrichment_personas`, `enrichment_dimensions`, `enrichment_edges`, `enrichment_conflicts`), Migrationen `create_enrichment_tables` + `save_enrichment_atomic` + `grant_enrichment_tables_service_role`. Gleiches Shared-Visibility-Muster wie PROJ-3 (RLS `true` für `authenticated`, kein Zugriff für `anon`, explizit gegen die DB verifiziert: `has_table_privilege('anon', 'enrichments', 'SELECT')` → `false`). `enrichment_dimensions.dimension_name` per CHECK-Constraint auf die 23 festen Namen begrenzt; `enrichment_edges`/`enrichment_conflicts` erzwingen per CHECK, dass genau die zum jeweiligen Typ (`informs`/`shapes`, `explicit`/`emergent`) passenden Quell-/Zielspalten gesetzt sind.
+- **Atomarer Speichervorgang von Anfang an:** `save_enrichment()` (Postgres-Funktion, `SECURITY INVOKER` bestätigt — `prosecdef: false`) bündelt Upsert von `enrichments` + kompletten Ersatz von Personas/Dimensionen/Kanten/Konflikten in einer einzigen Transaktion. Bewusst direkt so gebaut statt wie in PROJ-3 erst nachträglich per Bugfix (BUG-1 dort) — gleiche Lektion von Anfang an angewendet.
+- **Bug während der eigenen Verifikation gefunden und behoben:** Die erste Migration vergab GRANTs nur für `authenticated`, nicht für `service_role` (PROJ-3s Tabellen hatten das implizit aus der ursprünglichen Projekt-Vorlage). Beim Playwright-Verifikationslauf schlug die direkte DB-Prüfung mit `permission denied for table enrichments` fehl — behoben per Nachtrags-Migration `grant_enrichment_tables_service_role`.
+- **Kein appseitiger KI-Aufruf** (siehe Tech Design/Korrektur bei `/architecture`): `src/lib/enrichment/prompt-template.ts` baut einen vollständigen, kopierbaren Prompt inkl. eingebetteter Ebene-1/3-Daten (aus PROJ-3s bereits importierten `import_sections`/`import_entries`/`import_fields` rekonstruiert). Der Nutzer führt ihn manuell in einem eigenen Claude-Chat aus und lädt das Ergebnis zurück hoch.
+- **Neue Ausgabe-Vorlage** `docs/reference/KI-Anreicherungs-Ergebnis-Vorlage.md` (analog zu den beiden PROJ-3-Vorlagen) definiert das feste, mechanisch parsbare Markdown-Format der KI-Antwort. `src/lib/enrichment/parse-enrichment.ts` parst rein mechanisch dagegen (`remark`/`unified` über die bestehenden PROJ-3-Helfer `normalize-markdown.ts`/`parse-utils.ts` wiederverwendet, kein zweiter KI-Aufruf).
+- **Referenz-Auflösung:** Quell-/Ziel-Referenzen im Ergebnis (`[Eintrag-Label] → [Feldname]` bzw. `[Eintrag-Label]` für Content-Blöcke) werden gegen den aktuellen PROJ-3-Import aufgelöst (`import_fields`/`import_entries`). Nicht auflösbare Referenzen werden nicht stillschweigend verworfen, sondern als Klartext-Warnung in der Vorschau gesammelt (`unresolvedReferences`) — Best-Effort-Parsing, analog zu PROJ-3s Lücken-Markierung, hier eine Ebene weiter oben (Kanten-/Konflikt-Ebene statt Feld-Ebene).
+- **Vereinfachung ggü. Tech Design (bewusst, nicht in AC verlangt):** Jede Dimension-Instanz hat in diesem MVP genau eine `informs`-Quelle (nicht mehrere) — das Ausgabeformat sieht pro Werte-Block ein einzelnes `Quelle:`-Feld vor. Eine Dimension könnte fachlich von mehreren Antworten geprägt sein; das wäre eine spätere Erweiterung des Ausgabeformats, keine Datenmodell-Änderung.
+- **`hasDependentImportData()` in PROJ-3 real implementiert:** ruft jetzt `hasEnrichmentForProject()` auf (`src/lib/imports/actions.ts`), schließt die dort bewusst offen gelassene Erweiterungsstelle. Volle PROJ-2/3/17-Regressionssuite (21/21 Playwright) weiterhin grün, unverändert durch diese Ergänzung.
+- **UI:** `EnrichmentPanel` (State-Machine analog zu `ImportPanel`: kein Import → kein Prompt → Prompt+Upload → Vorschau → Lese-Übersicht), `PromptDisplay` (kopierbarer Prompt-Block), `EnrichmentView` (gemeinsamer Renderer für Vorschau UND Lese-Übersicht, analog `ParsedDocumentView`). In `ProjectDetailView` unterhalb des bestehenden `ImportPanel` eingehängt.
+- **Manuell + end-to-end gegen die echte Supabase-Instanz verifiziert** (Playwright, danach entfernt, kein permanenter Testfall — das ist Aufgabe von `/qa`): vollständiger Durchlauf Prompt erzeugen (enthält eingebettete Ebene-1/3-Daten) → Ergebnis-Datei hochladen → Vorschau (informs- und shapes-Kanten korrekt aufgelöst) → Übernehmen → Lese-Übersicht → harter Reload (Daten kommen aus der DB) → direkte DB-Verifikation aller vier Kind-Tabellen. Zusätzlich 3 neue Vitest-Unit-Tests für den Parser (`parse-enrichment.test.ts`): vollständiger Fall inkl. nicht auflösbarer Kante, Hard-Fail bei Fließtext ohne Struktur, Ein-Personen-Fall ohne Konflikte.
+- `npm run build`, `npm run lint`, `npm test` (73/73) sauber. Volle Playwright-Regression (21/21, PROJ-2/3/17) weiterhin grün.
 
 ## Dependencies
 - Requires: PROJ-1 (Supabase Infrastructure Setup) — Datenbank
@@ -74,9 +87,10 @@ Dieser Katalog ist für PROJ-4 **fix** (kein KI-frei-generierter, kein nutzer-ed
 - Kein KI-Dienst wird server-/appseitig aufgerufen (siehe Tech Design) — kein neues API-Secret, keine laufenden Kosten für MVP
 
 ## Open Questions
-- [ ] Exakte Formulierungs-/Längenvorgabe für Impact-Texte (z. B. maximale Zeichenzahl) — Teil des Prompt-Wordings, Feinjustierung bei `/backend`
+- [x] ~~Exakte Formulierungs-/Längenvorgabe für Impact-Texte~~ — bei `/backend` im Prompt-Wording festgelegt: „1–2 Sätze" (siehe `docs/reference/KI-Anreicherungs-Ergebnis-Vorlage.md` und `prompt-template.ts`)
 - [x] ~~Genauer KI-Anbieter/Modell für die Anreicherung~~ — bei `/architecture` geklärt: kein appseitiger API-Aufruf für MVP, Nutzer führt einen generierten Prompt manuell im eigenen Claude-Account aus (siehe Tech Design/Decision Log)
-- [ ] Genauer Mechanismus, wie pro Dimension entschieden wird, ob sich die Werte zwischen erkannten Personas tatsächlich unterscheiden (Schwelle für Aufsplitten vs. gemeinsamer Wert) — Teil des Prompt-Wordings, Feinjustierung bei `/backend`
+- [x] ~~Genauer Mechanismus, wie pro Dimension entschieden wird, ob sich die Werte zwischen erkannten Personas tatsächlich unterscheiden~~ — bei `/backend` gelöst: der Anreicherungs-Prompt weist die KI selbst an, nur dort mehrere Personas-Blöcke auszugeben, wo sich der Wert tatsächlich unterscheidet; der Parser übernimmt einfach, was die KI ausgibt (keine eigene Schwellenwert-Logik im Code nötig)
+- [ ] Ob eine Dimension-Instanz künftig mehrere `informs`-Quellen statt nur einer haben sollte (siehe Technical Decisions) — bewusst als spätere Formaterweiterung offengelassen, keine Blockade für PROJ-4
 
 ## Decision Log
 
@@ -108,6 +122,10 @@ Dieser Katalog ist für PROJ-4 **fix** (kein KI-frei-generierter, kein nutzer-ed
 | Rohtext der hochgeladenen Ergebnis-Datei wird zusammen mit dem Anreicherungs-Datensatz gespeichert | Nachvollziehbarkeit/Fehlersuche, falls der Parser etwas falsch interpretiert — analog zu den im `imports`-Bucket aufbewahrten PROJ-3-Rohdateien | 2026-08-28 |
 | Feste, parsbare Markdown-Ausgabevorlage für das Anreicherungsergebnis (neue Datei unter `docs/reference/`, analog zu `Journey-Transkript-Vorlage.md`/`Landingpage-Konzept-Vorlage.md`), mechanisches Parsing statt einer zweiten KI-Anfrage fürs Verarbeiten | Ermöglicht denselben Best-Effort-Parse-mit-Lücken-Markierung-Ansatz wie PROJ-3 (`remark`/`unified`), ohne dass die App selbst noch einmal ein KI-Modell aufrufen muss | 2026-08-28 |
 | Kein neues Package/SDK für KI-Zugriff | Die eigentliche KI-Verarbeitung läuft außerhalb der App im eigenen Claude-Account des Nutzers — die App selbst ruft kein KI-Modell auf | 2026-08-28 |
+| **[Backend]** `save_enrichment()` von Anfang an als atomare Postgres-Funktion (`SECURITY INVOKER`) gebaut, nicht als mehrere getrennte Inserts | Wendet die Lektion aus PROJ-3 BUG-1 (nicht-transaktionaler Speichervorgang) proaktiv an, statt denselben Fehler zu wiederholen und erst nachtraeglich per QA-Bugfix zu beheben | 2026-08-28 |
+| **[Backend]** Jede Dimension-Instanz hat genau eine `informs`-Quelle (ein `Quelle:`-Feld je Werte-Block im Ausgabeformat), keine Mehrfach-Quellen | Haelt das Ausgabeformat fuer die externe KI beherrschbar; eine Dimension koennte fachlich von mehreren Antworten geprägt sein, das ist aber keine AC-Anforderung und laesst sich spaeter als reine Formaterweiterung nachziehen, ohne das Datenmodell zu aendern | 2026-08-28 |
+| **[Backend]** Nicht auflösbare Quell-/Ziel-Referenzen (Kanten/Konflikte) werden als Klartext-Warnung gesammelt statt die App abstürzen zu lassen oder sie stillschweigend zu verwerfen | Konsistent mit PROJ-3s Best-Effort-Philosophie, nur eine Ebene höher (Kante/Konflikt statt einzelnes Feld) — eine KI-Antwort, die von der Vorlage abweicht, soll nicht den gesamten Import blockieren | 2026-08-28 |
+| **[Backend]** GRANTs für `service_role` nachtraeglich ergänzt (Migration `grant_enrichment_tables_service_role`) | Beim eigenen Verifikationslauf gefunden: die erste Migration vergab GRANTs nur für `authenticated`, PROJ-3s Tabellen hatten `service_role`-Rechte implizit aus der urspruenglichen Projekt-Vorlage geerbt, die neuen Tabellen nicht | 2026-08-28 |
 
 ---
 <!-- Sections below are added by subsequent skills -->
