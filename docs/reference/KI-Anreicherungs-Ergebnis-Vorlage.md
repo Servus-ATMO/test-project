@@ -6,6 +6,8 @@
 
 **Parsing-Prinzip:** Wie bei den anderen beiden Vorlagen gilt Best-Effort-Parsing mit sichtbarer Lücken-Markierung statt Alles-oder-Nichts (siehe PROJ-3). Ein `**Wert:** nicht ableitbar` wird als bewusste Lücke gespeichert, kein fehlendes Feld erfunden.
 
+**Toleranz bei „Quelle"/„Feld A"/„Feld B":** Der Prompt fordert zwar strikt genau ein `[Eintrag-Label] → [Feldname]`-Paar ohne Zusätze an, real weicht die KI davon gelegentlich ab (Bug-Report 2026-08-28, echter Import: 0 von 38 Referenzen aufgelöst). Der Parser toleriert deshalb zusätzlich: einen an den Feldnamen angehängten Klammerzusatz (z. B. „Antwort (Option D)" wird zusätzlich als „Antwort" geprüft) sowie mehrere mit Semikolon getrennte Referenzen in einer Zeile (jede wird einzeln aufgelöst, `Quelle` kann dadurch zu mehreren `informs`-Kanten führen). Freitext ohne „→" (z. B. „entfällt, …") bleibt bewusst unaufgelöst und landet als Warnung, statt geraten zu werden.
+
 ---
 
 ```markdown
@@ -32,7 +34,7 @@
 
 #### Persona: [Name]
 **Wert:** [Konkreter Wert, ausschließlich aus den unten eingebetteten Ebene-1/3-Daten abgeleitet] ODER: nicht ableitbar
-**Quelle:** [Eintrag-Label] → [Feldname] (z. B. "Frage 3 → Antwort")
+**Quelle:** GENAU EIN "[Eintrag-Label] → [Feldname]"-Paar, Feldname exakt wie unten eingebettet, OHNE Zusätze (z. B. "Frage 3 → Antwort" — NICHT "Frage 3 → Antwort (Option D)" und NICHT mehrere Quellen mit Semikolon in einer Zeile kombiniert). Stützt sich der Wert auf mehrere Journey-Antworten, die wichtigste als Quelle zitieren und die übrigen im Impact-Text erwähnen.
 **Impact-Text:** [1–2 Sätze, warum diese Quelle zu diesem Wert führt — keine erfundenen Fakten/Zahlen]
 **Gewichtung:** [1 = schwach, 2 = mittel, 3 = stark]
 
@@ -40,7 +42,7 @@
 
 [Immer GENAU EIN Block, ohne "Persona:"-Zeile — projektweit, nie pro Persona.]
 **Wert:** [...] ODER: nicht ableitbar
-**Quelle:** [Eintrag-Label] → [Feldname]
+**Quelle:** [Eintrag-Label] → [Feldname] (gleiche Regeln wie oben: genau ein Paar, kein Klammerzusatz, kein Semikolon)
 **Impact-Text:** [...]
 **Gewichtung:** [1–3]
 

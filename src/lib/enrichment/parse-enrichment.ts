@@ -16,16 +16,44 @@ import type {
 } from './types'
 
 const ARROW = /→|->/
+const TRAILING_PAREN = /\s*\([^)]*\)\s*$/
 
 // "[Eintrag-Label] -> [Feldname]" bzw. mit "→" - Trennzeichen fuer alle
 // Quell-/Ziel-Referenzen im Anreicherungsergebnis (siehe Ausgabe-Vorlage).
-function splitReference(text: string): { entryLabel: string; fieldName: string } | null {
-  const parts = text.split(ARROW)
-  if (parts.length !== 2) return null
-  const entryLabel = parts[0].trim()
-  const fieldName = parts[1].trim()
-  if (!entryLabel || !fieldName) return null
-  return { entryLabel, fieldName }
+// Toleriert zwei haeufige Abweichungen der KI vom strikten Format (Bug-Report
+// PROJ-4, 2026-08-28: bei einem echten Import loesten sich dadurch 0 von 38
+// "Quelle:"-Referenzen auf): (1) mehrere Referenzen mit Semikolon in einer
+// Zeile statt je einer eigenen "Quelle:"-Zeile, (2) ein an den Feldnamen
+// angehaengter Klammerzusatz (z. B. "Antwort (Option D)" statt "Antwort") -
+// dafuer wird zuerst exakt, bei Fehlschlag zusaetzlich ohne den Klammerzusatz
+// gegen die importierten Felder abgeglichen.
+function splitReferences(text: string): { entryLabel: string; fieldName: string }[] {
+  return text
+    .split(';')
+    .map((part) => {
+      const arrowParts = part.split(ARROW)
+      if (arrowParts.length !== 2) return null
+      const entryLabel = arrowParts[0].trim()
+      const fieldName = arrowParts[1].trim()
+      if (!entryLabel || !fieldName) return null
+      return { entryLabel, fieldName }
+    })
+    .filter((ref): ref is { entryLabel: string; fieldName: string } => ref !== null)
+}
+
+// Loest eine "Quelle:"/"Feld A:"/"Feld B:"-Zeile in null, eine oder mehrere
+// Feld-IDs auf (leeres Array = nichts davon konnte zugeordnet werden).
+function resolveFieldIds(text: string, fieldLookup: Map<string, string>): string[] {
+  const ids: string[] = []
+  for (const { entryLabel, fieldName } of splitReferences(text)) {
+    const exact = fieldLookup.get(`${entryLabel}|||${fieldName}`)
+    const stripped = fieldName.replace(TRAILING_PAREN, '').trim()
+    const withoutSuffix =
+      stripped !== fieldName ? fieldLookup.get(`${entryLabel}|||${stripped}`) : undefined
+    const id = exact ?? withoutSuffix
+    if (id) ids.push(id)
+  }
+  return ids
 }
 
 function parseWeight(raw: string | undefined): number {
@@ -124,19 +152,20 @@ function parseDimensions(
 
       const quelle = fields.get('Quelle')
       if (!quelle) continue
-      const ref = splitReference(quelle)
-      const fieldId = ref ? fieldLookup.get(`${ref.entryLabel}|||${ref.fieldName}`) : undefined
-      if (fieldId) {
-        informsEdges.push({
-          id: makeId(),
-          edgeType: 'informs',
-          sourceFieldId: fieldId,
-          targetDimensionId: dimensionId,
-          sourceDimensionId: null,
-          targetEntryId: null,
-          impactText: fields.get('Impact-Text') ?? '',
-          weight: parseWeight(fields.get('Gewichtung')),
-        })
+      const fieldIds = resolveFieldIds(quelle, fieldLookup)
+      if (fieldIds.length > 0) {
+        for (const fieldId of fieldIds) {
+          informsEdges.push({
+            id: makeId(),
+            edgeType: 'informs',
+            sourceFieldId: fieldId,
+            targetDimensionId: dimensionId,
+            sourceDimensionId: null,
+            targetEntryId: null,
+            impactText: fields.get('Impact-Text') ?? '',
+            weight: parseWeight(fields.get('Gewichtung')),
+          })
+        }
       } else {
         unresolvedReferences.push(
           `Dimension „${dimensionName}“: Quelle „${quelle}“ konnte keinem importierten Feld zugeordnet werden.`
@@ -215,10 +244,8 @@ function parseConflicts(
     if (type === 'explizit') {
       const refA = fields.get('Feld A')
       const refB = fields.get('Feld B')
-      const a = refA ? splitReference(refA) : null
-      const b = refB ? splitReference(refB) : null
-      const fieldAId = a ? fieldLookup.get(`${a.entryLabel}|||${a.fieldName}`) : undefined
-      const fieldBId = b ? fieldLookup.get(`${b.entryLabel}|||${b.fieldName}`) : undefined
+      const fieldAId = refA ? resolveFieldIds(refA, fieldLookup)[0] : undefined
+      const fieldBId = refB ? resolveFieldIds(refB, fieldLookup)[0] : undefined
       if (!fieldAId || !fieldBId) {
         unresolvedReferences.push(
           `Konflikt „${title.trim()}“: Felder konnten nicht vollständig zugeordnet werden.`

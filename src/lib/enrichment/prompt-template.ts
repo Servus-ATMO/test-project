@@ -40,7 +40,7 @@ const OUTPUT_FORMAT = `# KI-Anreicherung – [Projektname]
 
 #### Persona: [Name]
 **Wert:** [Konkreter Wert, ausschließlich aus den unten eingebetteten Ebene-1/3-Daten abgeleitet] ODER: nicht ableitbar
-**Quelle:** [Eintrag-Label] → [Feldname] (z. B. "Frage 3 → Antwort")
+**Quelle:** GENAU EIN "[Eintrag-Label] → [Feldname]"-Paar, Feldname exakt wie unten eingebettet, OHNE Zusätze (z. B. "Frage 3 → Antwort" — NICHT "Frage 3 → Antwort (Option D)" und NICHT mehrere Quellen mit Semikolon in einer Zeile kombiniert). Stützt sich der Wert auf mehrere Journey-Antworten, die wichtigste als Quelle zitieren und die übrigen im Impact-Text erwähnen.
 **Impact-Text:** [1–2 Sätze, warum diese Quelle zu diesem Wert führt — keine erfundenen Fakten/Zahlen]
 **Gewichtung:** [1 = schwach, 2 = mittel, 3 = stark]
 
@@ -48,7 +48,7 @@ const OUTPUT_FORMAT = `# KI-Anreicherung – [Projektname]
 
 [Immer GENAU EIN Block, ohne "Persona:"-Zeile — projektweit, nie pro Persona.]
 **Wert:** [...] ODER: nicht ableitbar
-**Quelle:** [Eintrag-Label] → [Feldname]
+**Quelle:** [Eintrag-Label] → [Feldname] (gleiche Regeln wie oben: genau ein Paar, kein Klammerzusatz, kein Semikolon)
 **Impact-Text:** [...]
 **Gewichtung:** [1–3]
 
@@ -108,7 +108,7 @@ ${DIMENSION_NAMES.map((name) => `- ${name}`).join('\n')}
 
 "Umsetzungsrahmen" ist die einzige Dimension, die IMMER genau einen projektweiten Wert hat (nie pro Persona). Alle anderen 22 Dimensionen bekommen eine Werte-Instanz pro Persona, aber NUR dort, wo sich der Wert zwischen den Personas tatsächlich unterscheidet — unterscheidet er sich nicht, reicht eine einzige Instanz (z. B. bei "Persona: Alle" oder einfach bei nur einer erkannten Persona).
 
-Für jede Werte-Instanz: Zitiere die genaue Quelle (Eintrag-Label → Feldname, exakt wie unten eingebettet), begründe in einem kurzen Impact-Text, warum diese Quelle zu diesem Wert führt, und vergib eine Gewichtung (1 = schwach, 2 = mittel, 3 = stark).
+Für jede Werte-Instanz: Zitiere die genaue Quelle (Eintrag-Label → Feldname, exakt wie unten eingebettet — nur der reine Feldname, ohne angehängte Zusätze wie "(Option D)", und immer nur EIN Eintrag-Label/Feldname-Paar pro Quelle, nicht mehrere mit Semikolon kombiniert), begründe in einem kurzen Impact-Text, warum diese Quelle zu diesem Wert führt, und vergib eine Gewichtung (1 = schwach, 2 = mittel, 3 = stark).
 
 ## Schritt 3 — Kanten zu den Content-Blöcken
 

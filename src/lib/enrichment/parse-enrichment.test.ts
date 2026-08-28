@@ -166,6 +166,58 @@ describe('parseEnrichmentResult', () => {
     expect(emergent?.involvedDimensionIds).toEqual([businessGoalVereine?.id])
   })
 
+  // Bug-Report PROJ-4 (echte Kundendaten, 2026-08-28): die KI haengt an
+  // Feldnamen in "Quelle:" haeufig einen Klammerzusatz an (z. B. "Antwort
+  // (Option D)") und kombiniert mehrere Quellen mit Semikolon in einer
+  // Zeile statt einer eigenen "Quelle:"-Zeile je Referenz - beides liess
+  // die Referenz bisher komplett unaufgeloest (bei einem echten Import: 0
+  // von 38 "Quelle:"-Referenzen aufgeloest).
+  it('resolves a Quelle with a trailing parenthetical suffix on the field name', () => {
+    const result = parseEnrichmentResult(
+      VALID_RESULT.replace('**Quelle:** Frage 1 → Antwort\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.', '**Quelle:** Frage 1 → Antwort (Option D)\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.'),
+      buildFixtureImport()
+    )
+    const businessGoalVereine = result.dimensions.find(
+      (d) => d.dimensionName === 'Business Goal' && d.personaId === result.personas[0].id
+    )
+    const informsEdge = result.edges.find(
+      (e) => e.edgeType === 'informs' && e.targetDimensionId === businessGoalVereine?.id
+    )
+    expect(informsEdge?.sourceFieldId).toBe('field-frage-1-antwort')
+    expect(result.unresolvedReferences.some((msg) => msg.includes('Business Goal'))).toBe(false)
+  })
+
+  it('resolves multiple semicolon-separated Quelle references into multiple informs-edges', () => {
+    const result = parseEnrichmentResult(
+      VALID_RESULT.replace(
+        '**Quelle:** Frage 1 → Antwort\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.',
+        '**Quelle:** Frage 1 → Antwort (Option D); Frage 2 → Antwort\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.'
+      ),
+      buildFixtureImport()
+    )
+    const businessGoalVereine = result.dimensions.find(
+      (d) => d.dimensionName === 'Business Goal' && d.personaId === result.personas[0].id
+    )
+    const informsEdges = result.edges.filter(
+      (e) => e.edgeType === 'informs' && e.targetDimensionId === businessGoalVereine?.id
+    )
+    expect(informsEdges.map((e) => e.sourceFieldId).sort()).toEqual(
+      ['field-frage-1-antwort', 'field-frage-2-antwort'].sort()
+    )
+    expect(result.unresolvedReferences.some((msg) => msg.includes('Business Goal'))).toBe(false)
+  })
+
+  it('still reports a Quelle as unresolved when it is free-text prose, not a reference', () => {
+    const result = parseEnrichmentResult(
+      VALID_RESULT.replace(
+        '**Quelle:** Frage 1 → Antwort\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.',
+        '**Quelle:** entfällt, diese Frage wurde nicht gestellt.\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.'
+      ),
+      buildFixtureImport()
+    )
+    expect(result.unresolvedReferences.some((msg) => msg.includes('entfällt'))).toBe(true)
+  })
+
   it('flags text without any recognizable structure as not recognizable', () => {
     const result = parseEnrichmentResult('Das ist nur ein normaler Fliesstext ohne jede Struktur.', buildFixtureImport())
     expect(result.hasRecognizableStructure).toBe(false)
