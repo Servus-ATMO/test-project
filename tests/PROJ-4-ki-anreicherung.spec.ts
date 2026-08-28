@@ -213,6 +213,11 @@ test('PROJ-4: prompt generation, upload, preview, save, read overview, XSS-safet
   expect(promptValue).toContain('Business Goal')
   expect(promptValue).toContain('Umsetzungsrahmen')
 
+  // --- Bugfix-Regression: bereits erzeugter Prompt bleibt nach Reload
+  // erhalten (localStorage), muss nicht erneut erzeugt werden ---
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.locator('textarea')).toHaveValue(promptValue)
+
   // --- AC: Hard-Fail bei praktisch keiner erkennbaren Struktur ---
   await page.setInputFiles('input[type="file"] >> nth=0', {
     name: 'garbage.md',

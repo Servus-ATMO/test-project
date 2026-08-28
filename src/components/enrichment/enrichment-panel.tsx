@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -18,6 +18,41 @@ interface EnrichmentPanelProps {
   projectName: string
   hasImport: boolean
   initialEnrichment: Enrichment | null
+}
+
+function promptStorageKey(projectId: string) {
+  return `proj4-enrichment-prompt-${projectId}`
+}
+
+// Der Prompt wird bewusst nur im Browser gespeichert (nicht in der DB): er
+// ist rein aus bereits importierten Daten abgeleitet, jederzeit identisch
+// neu erzeugbar - eine Server-Persistenz waere fuer reine Ableitungsdaten
+// unnoetiger Aufwand. localStorage verhindert nur den Nutzer-Frust, ihn nach
+// einem erneuten Seitenbesuch (typischer Ablauf: Prompt kopieren, in einem
+// separaten Chat ausfuehren, spaeter zurueckkommen) neu klicken zu muessen.
+function readStoredPrompt(projectId: string): string | null {
+  try {
+    return localStorage.getItem(promptStorageKey(projectId))
+  } catch {
+    return null
+  }
+}
+
+function writeStoredPrompt(projectId: string, prompt: string) {
+  try {
+    localStorage.setItem(promptStorageKey(projectId), prompt)
+  } catch {
+    // localStorage kann in Private-Browsing-Modi fehlschlagen - kein
+    // kritischer Pfad, der Prompt bleibt dann einfach nur In-Memory.
+  }
+}
+
+function clearStoredPrompt(projectId: string) {
+  try {
+    localStorage.removeItem(promptStorageKey(projectId))
+  } catch {
+    // siehe writeStoredPrompt
+  }
 }
 
 export function EnrichmentPanel({
@@ -44,6 +79,20 @@ export function EnrichmentPanel({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [replaceWarning, setReplaceWarning] = useState<string | null>(null)
 
+  // Bereits erzeugten Prompt beim (Wieder-)Betreten der Seite wiederherstellen
+  // (siehe Bug-Report: Nutzer erzeugt den Prompt, verlaesst die Seite, um ihn
+  // in einem separaten Chat auszufuehren, kommt spaeter zurueck - erwartet
+  // den Prompt dann noch vorzufinden). showFlow mit setzen, falls bereits
+  // eine Anreicherung existiert, sonst wuerde die Lese-Uebersicht Vorrang
+  // vor dem wiederhergestellten Prompt bekommen (siehe Render-Reihenfolge unten).
+  useEffect(() => {
+    const stored = readStoredPrompt(projectId)
+    if (stored) {
+      setPrompt(stored)
+      setShowFlow(true)
+    }
+  }, [projectId])
+
   const resetFlow = () => {
     setShowFlow(false)
     setPrompt(null)
@@ -54,6 +103,7 @@ export function EnrichmentPanel({
     setPreview(null)
     setSaveError(null)
     setReplaceWarning(null)
+    clearStoredPrompt(projectId)
   }
 
   const handleGeneratePrompt = async () => {
@@ -66,6 +116,7 @@ export function EnrichmentPanel({
         return
       }
       setPrompt(result.prompt)
+      writeStoredPrompt(projectId, result.prompt)
     } finally {
       setGeneratingPrompt(false)
     }
