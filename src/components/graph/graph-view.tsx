@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { buildGraphModel } from '@/lib/graph/build-graph-model'
 import { computeHighlight, computeHighlightForPersona, type HighlightResult } from '@/lib/graph/highlight'
 import { buildEffectiveEdges } from '@/lib/graph/effective-edges'
+import { computeContentMarginLeft } from '@/lib/graph/content-alignment'
 import { GraphNode, DimensionGroupNode, type HighlightState } from './graph-node'
 import { DossierPanel } from './dossier-panel'
 import type {
@@ -390,12 +391,23 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const [edgePaths, setEdgePaths] = useState<EdgePath[]>([])
+  const [contentMarginLeft, setContentMarginLeft] = useState(0)
   const computeEdgesRef = useRef<() => void>(() => {})
 
   // Kanten-Pfade aus den tatsaechlichen DOM-Positionen der Knoten berechnen
   // (rechter Rand des Quell-Knotens -> linker Rand des Ziel-Knotens, kubische
   // Bezier-Kurve dazwischen) - exakt die Formel aus dem Referenz-Sketch
   // (drawEdges()), portiert auf React Refs statt direkter DOM-Manipulation.
+  //
+  // Berechnet in derselben Passage die horizontale Position der Spalten-
+  // Zeile selbst (Nutzer-Feedback 2026-08-29): "graph-canvas" ist immer
+  // volle Breite, die Spalten-Zeile darin bleibt aber am Titel ausgerichtet
+  // (linksbuendig), solange sie in die Standardbreite (max-w-5xl des
+  // umgebenden Seitenlayouts) passt - erst wenn ihr tatsaechlicher Inhalt
+  // (z. B. eine 4./5. Ebene) breiter wird, zentriert sie sich stattdessen
+  // im vollen Browserfenster. Reiner CSS-Trick reicht dafuer nicht (die
+  // Fallunterscheidung haengt von der tatsaechlichen Inhaltsbreite ab),
+  // deshalb per JS gemessen und als `marginLeft` gesetzt.
   useLayoutEffect(() => {
     computeEdgesRef.current = () => {
       const canvas = canvasRef.current
@@ -418,6 +430,7 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
         paths.push({ id: e.id, d, active })
       }
       setEdgePaths(paths)
+      setContentMarginLeft(computeContentMarginLeft(canvasRect.width, window.innerWidth))
     }
     computeEdgesRef.current()
   }, [renderData])
@@ -463,16 +476,23 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
         </Select>
       </div>
 
-      {/* Bricht bewusst aus der max-w-5xl-Beschraenkung des umgebenden
-          Seitenlayouts aus (Nutzer-Feedback 2026-08-29: "Ebenen-Bereich soll
-          die gesamte Browserbreite nutzen koennen") - klassischer "full
-          bleed"-Trick unabhaengig von der Breite des Elternelements, siehe
-          https://css-tricks.com/full-width-containers-and-standard-content/.
-          Nur dieser Bereich, nicht die Seite insgesamt (Breadcrumb/Titel/
-          Persona-Filter bleiben im normalen Layout-Raster). */}
+      {/* "graph-canvas" ist immer volle Browserbreite (full-bleed-Trick,
+          durchbricht bewusst die max-w-5xl-Beschraenkung des umgebenden
+          Seitenlayouts) - Nutzer-Feedback 2026-08-29. Die Spalten-Zeile
+          DARIN (canvasRef, siehe unten) bleibt aber am Titel ausgerichtet,
+          solange sie in die Standardbreite passt, und zentriert sich erst
+          im vollen Fenster, sobald ihr Inhalt (z. B. eine 4./5. Ebene)
+          breiter wird - dafuer wird ihre Position/Breite tatsaechlich
+          gemessen (`contentMarginLeft`, siehe useLayoutEffect oben), eine
+          reine CSS-Loesung kann diese inhaltsabhaengige Fallunterscheidung
+          nicht abbilden. */}
       <div className="relative left-1/2 right-1/2 w-screen -mx-[50vw] px-4">
         <div data-testid="graph-canvas" className="overflow-x-auto rounded-lg border bg-muted/20 pb-4">
-          <div ref={canvasRef} className="relative flex items-start gap-10 p-6">
+          <div
+            ref={canvasRef}
+            className="relative flex w-fit items-start gap-10 p-6"
+            style={{ marginLeft: contentMarginLeft }}
+          >
             <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
               {edgePaths.map((edge) => {
                 const style: CSSProperties = highlightExists
