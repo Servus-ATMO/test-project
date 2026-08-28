@@ -69,8 +69,17 @@ function buildFieldLookup(parsedImport: ParsedImport): Map<string, string> {
   const lookup = new Map<string, string>()
   for (const section of [...parsedImport.journey.sections, ...parsedImport.konzept.sections]) {
     for (const entry of section.entries) {
+      // Bei Sections mit genau einem, unbenannten Eintrag (z. B. "Einstieg",
+      // "Notizen zur Aufnahme", mehrere Konzept-Abschnitte) zeigt renderSection()
+      // in prompt-template.ts KEINE "#### [Eintrag-Label]"-Zeile - die KI sieht
+      // dort nur die Section-Ueberschrift und zitiert folgerichtig genau die als
+      // "Eintrag-Label" (Bug-Report PROJ-4, 2026-08-28: "Notizen zur Aufnahme →
+      // ..." blieb unaufloesbar, weil hier bisher der leere entry.label als Key
+      // diente). Section-Name als Fallback deckt sich exakt mit dem, was die KI
+      // tatsaechlich zu sehen bekommt.
+      const effectiveLabel = entry.label || section.name
       for (const field of entry.fields) {
-        lookup.set(`${entry.label}|||${field.name}`, field.id)
+        lookup.set(`${effectiveLabel}|||${field.name}`, field.id)
       }
     }
   }

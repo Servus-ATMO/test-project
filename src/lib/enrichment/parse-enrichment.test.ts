@@ -31,6 +31,25 @@ function buildFixtureImport(): ParsedImport {
             },
           ],
         },
+        {
+          id: 'sec-journey-notizen',
+          document: 'journey',
+          name: 'Notizen zur Aufnahme',
+          entries: [
+            {
+              id: 'entry-notizen',
+              label: '',
+              fields: [
+                {
+                  id: 'field-notizen-uebersprungen',
+                  name: 'Übersprungene oder zusätzliche Fragen',
+                  value: 'Frage 7 wurde übersprungen.',
+                  status: 'found',
+                },
+              ],
+            },
+          ],
+        },
       ],
     },
     konzept: {
@@ -204,6 +223,30 @@ describe('parseEnrichmentResult', () => {
     expect(informsEdges.map((e) => e.sourceFieldId).sort()).toEqual(
       ['field-frage-1-antwort', 'field-frage-2-antwort'].sort()
     )
+    expect(result.unresolvedReferences.some((msg) => msg.includes('Business Goal'))).toBe(false)
+  })
+
+  // Bug-Report PROJ-4 (echte Kundendaten, 2026-08-28): fuer Sections mit
+  // genau einem unbenannten Eintrag (z. B. "Notizen zur Aufnahme", "Einstieg")
+  // zeigt der Prompt der KI keine "#### [Eintrag-Label]"-Zeile - sie zitiert
+  // deshalb folgerichtig die Section-Ueberschrift als Eintrag-Label. Bisher
+  // blieb das trotz korrektem "→"-Format unaufloesbar, weil buildFieldLookup()
+  // stattdessen den (leeren) entry.label als Schluessel verwendete.
+  it('resolves a Quelle that cites the section name for a section with a single unlabeled entry', () => {
+    const result = parseEnrichmentResult(
+      VALID_RESULT.replace(
+        '**Quelle:** Frage 1 → Antwort\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.',
+        '**Quelle:** Notizen zur Aufnahme → Übersprungene oder zusätzliche Fragen\n**Impact-Text:** Die Antwort nennt Vereine als Zielgruppe.'
+      ),
+      buildFixtureImport()
+    )
+    const businessGoalVereine = result.dimensions.find(
+      (d) => d.dimensionName === 'Business Goal' && d.personaId === result.personas[0].id
+    )
+    const informsEdge = result.edges.find(
+      (e) => e.edgeType === 'informs' && e.targetDimensionId === businessGoalVereine?.id
+    )
+    expect(informsEdge?.sourceFieldId).toBe('field-notizen-uebersprungen')
     expect(result.unresolvedReferences.some((msg) => msg.includes('Business Goal'))).toBe(false)
   })
 
