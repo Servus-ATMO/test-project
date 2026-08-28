@@ -137,17 +137,14 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   await page.goto(`/kunden/${clientId}/${projectId}`, { waitUntil: 'networkidle' })
 
   // --- Setup: Import hochladen (Journey + Konzept mit einem verwaisten Block) ---
-  await page.setInputFiles('input[type="file"] >> nth=0', {
-    name: 'journey-transkript.md',
+  // Seit PROJ-3s Ein-Datei-Umstellung (2026-08-28) gibt es nur noch einen
+  // Upload-Slot - beide Bloecke werden als eine kombinierte Datei hochgeladen.
+  await page.setInputFiles('input[type="file"]', {
+    name: 'interview-import.md',
     mimeType: 'text/markdown',
-    buffer: Buffer.from(JOURNEY_VALID),
+    buffer: Buffer.from(`${JOURNEY_VALID}\n\n---\n\n${KONZEPT_WITH_ORPHAN}`),
   })
-  await page.setInputFiles('input[type="file"] >> nth=1', {
-    name: 'konzept.md',
-    mimeType: 'text/markdown',
-    buffer: Buffer.from(KONZEPT_WITH_ORPHAN),
-  })
-  await page.getByRole('button', { name: 'Dateien prüfen' }).click()
+  await page.getByRole('button', { name: 'Datei prüfen' }).click()
   await expect(page.getByText('Vorschau')).toBeVisible()
   await page.getByRole('button', { name: 'Import übernehmen' }).click()
   await expect(page.getByText('Erneut importieren')).toBeVisible({ timeout: 10000 })

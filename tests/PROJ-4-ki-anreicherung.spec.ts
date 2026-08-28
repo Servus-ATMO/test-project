@@ -186,17 +186,14 @@ test('PROJ-4: prompt generation, upload, preview, save, read overview, XSS-safet
   await page.goto(`/kunden/${clientId}/${projectId}`, { waitUntil: 'networkidle' })
   await expect(page.getByRole('button', { name: 'Anreicherungs-Prompt erzeugen' })).toBeDisabled()
 
-  await page.setInputFiles('input[type="file"] >> nth=0', {
-    name: 'journey.md',
+  // Seit PROJ-3s Ein-Datei-Umstellung (2026-08-28) gibt es nur noch einen
+  // Upload-Slot - beide Bloecke werden als eine kombinierte Datei hochgeladen.
+  await page.setInputFiles('input[type="file"]', {
+    name: 'interview-import.md',
     mimeType: 'text/markdown',
-    buffer: Buffer.from(JOURNEY_VALID),
+    buffer: Buffer.from(`${JOURNEY_VALID}\n\n---\n\n${KONZEPT_VALID}`),
   })
-  await page.setInputFiles('input[type="file"] >> nth=1', {
-    name: 'konzept.md',
-    mimeType: 'text/markdown',
-    buffer: Buffer.from(KONZEPT_VALID),
-  })
-  await page.click('text=Dateien prüfen')
+  await page.click('text=Datei prüfen')
   await page.click('text=Import übernehmen')
   await expect(page.getByText('Erneut importieren')).toBeVisible({ timeout: 10000 })
 
@@ -331,17 +328,12 @@ test('PROJ-4: prompt generation, upload, preview, save, read overview, XSS-safet
   // --- AC: PROJ-3 Re-Import warnt jetzt vor abhaengigen Daten (echte Pruefung statt Stub) ---
   await page.goto(`/kunden/${clientId}/${projectId}`, { waitUntil: 'networkidle' })
   await page.click('text=Erneut importieren')
-  await page.setInputFiles('input[type="file"] >> nth=0', {
-    name: 'journey.md',
+  await page.setInputFiles('input[type="file"]', {
+    name: 'interview-import.md',
     mimeType: 'text/markdown',
-    buffer: Buffer.from(JOURNEY_VALID),
+    buffer: Buffer.from(`${JOURNEY_VALID}\n\n---\n\n${KONZEPT_VALID}`),
   })
-  await page.setInputFiles('input[type="file"] >> nth=1', {
-    name: 'konzept.md',
-    mimeType: 'text/markdown',
-    buffer: Buffer.from(KONZEPT_VALID),
-  })
-  await page.click('text=Dateien prüfen')
+  await page.click('text=Datei prüfen')
   await page.click('text=Import übernehmen')
   await expect(page.getByText(/abhängige Daten/)).toBeVisible({ timeout: 10000 })
 })

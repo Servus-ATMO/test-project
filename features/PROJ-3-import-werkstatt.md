@@ -1,10 +1,10 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: In Progress
+## Status: Approved
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-28 (Backend)
+**Last Updated:** 2026-08-28 (QA)
 
-**Hinweis:** Backend + Datenmodell der Ein-Datei-Umstellung sind jetzt implementiert und gegen die echte (auch produktiv genutzte) Supabase-Instanz verifiziert — siehe Implementierungsnotizen unten. Die UI (`ImportPanel`) wurde im gleichen Zug auf einen einzigen Upload-Slot umgestellt, damit die Anwendung durchgehend baubar/funktionsfähig bleibt; ein späterer `/frontend PROJ-3`-Durchlauf kann die UI weiter polieren, ist aber für die Grundfunktion nicht mehr zwingend nötig. Nächster Schritt: `/qa PROJ-3` — inkl. Neuschreiben der permanenten E2E-Suite (`tests/PROJ-3-import-werkstatt.spec.ts`) für den Ein-Datei-Flow, siehe Implementierungsnotizen.
+**Hinweis:** Die Ein-Datei-Umstellung ist vollständig implementiert und QA-geprüft (dritte QA-Runde, siehe QA Test Results) — 10/10 Acceptance Criteria bestanden, keine offenen Bugs, production-ready. Nächster Schritt: `/deploy PROJ-3`.
 
 ## Implementierungsnotizen
 - **Ein-Datei-Umstellung implementiert (`/backend`, 2026-08-28):**
@@ -224,9 +224,108 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 
 ## QA Test Results
 
-**Tested:** 2026-08-27 (zweite Runde, nach `/backend`-Bugfix für BUG-1 + BUG-2)
+**Aktuelle Runde (dritte Runde, 2026-08-28) — Ein-Datei-Umstellung.** Die Acceptance Criteria/Edge Cases/Security-Ergebnisse unten in diesem Abschnitt sind die aktuell gültigen (Ein-Datei-Format). Die historischen Runden 1+2 (altes Zwei-Datei-Format, vor `/refine` 2026-08-28) sind weiter unten unter "Historische Runden 1+2" archiviert — bewusst nicht gelöscht, aber überholt: die dort getestete UI (zwei Upload-Slots) existiert im aktuellen Code nicht mehr.
+
+**Tested:** 2026-08-28
 **App URL:** http://localhost:3000
 **Tester:** QA Engineer (AI)
+
+### Vorgehen (dritte Runde)
+- `npm test` (108/108), `npm run lint`, `npm run build` sauber vor der eigentlichen QA-Runde geprüft.
+- Code-Review von `src/lib/imports/actions.ts`, `split-combined-import.ts`, `db.ts`, `format-detect.ts`, `import-panel.tsx` (alle im `/backend`-Durchlauf für die Ein-Datei-Umstellung geändert).
+- **Regression zuerst repariert, dann getestet:** Die PROJ-3-UI-Änderung (ein Upload-Slot statt zwei) hatte die permanenten E2E-Suiten von PROJ-4 und PROJ-5 gebrochen, die für ihr eigenes Setup den alten Zwei-Datei-Upload verwendet hatten (`tests/PROJ-4-ki-anreicherung.spec.ts`, `tests/PROJ-5-dag-sankey-visualisierung.spec.ts`). Beide auf den neuen Ein-Datei-Upload umgestellt (kombinierter Buffer statt zwei `setInputFiles`-Aufrufe, Button-Text „Datei prüfen" statt „Dateien prüfen"), danach vollständig grün.
+- RLS-Policies und GRANTs der vier Import-Tabellen erneut direkt in Supabase geprüft (`pg_policies`, `information_schema.role_table_grants`) — durch die Spalten-Migration (`journey_file_path`/`konzept_file_path` → `raw_file_path`) unverändert (Spaltenänderungen wirken sich nicht auf Tabellen-Policies aus, aber bewusst gegengeprüft statt nur angenommen).
+- **Eigener Fund während der Prüfung (siehe Bugs Found):** Die `/backend`-Migration hatte `save_interview_import()` per `DROP FUNCTION` + `CREATE OR REPLACE FUNCTION` neu angelegt, was den zuvor gesetzten `REVOKE EXECUTE … FROM PUBLIC` zurückgesetzt hatte — wurde vom Backend-Agenten selbst noch in derselben Sitzung bemerkt und korrigiert (siehe Implementierungsnotizen), hier unabhängig per `has_function_privilege` erneut verifiziert und zusätzlich mit einem permanenten Regressionstest abgesichert, damit ein künftiges DROP+CREATE denselben Fehler nicht unbemerkt wiedereinführt.
+- Permanente Playwright-Suite `tests/PROJ-3-import-werkstatt.spec.ts` vollständig neu geschrieben für den Ein-Datei-Flow (13 Tests, davon 2 neu ggü. dem ursprünglichen Umfang: der Grant-Regressionstest und ein Test, der den bisher ungetesteten „Trotzdem fortfahren"-Speicherpfad bei fehlendem Block bis zur DB verifiziert). Neue Fixtures: `proj3-interview-import-valid.md`, `proj3-interview-import-real-format.md`, `proj3-interview-import-swapped-order.md` (jeweils aus den bestehenden Journey-/Konzept-Fixtures zusammengesetzt, keine Inhalts-Duplizierung).
+- Responsive Kontrolle (375px/768px/1440px) für Upload- und Vorschau-Zustand per Screenshot geprüft (temporäres Skript, nicht committet) — keine Layout-Regressionen.
+- Vollständige Regression über alle fünf permanenten Suiten (PROJ-2, PROJ-3, PROJ-4, PROJ-5, PROJ-17) auf Chromium UND Mobile Safari ausgeführt: 72/72 grün.
+
+### Acceptance Criteria Status (dritte Runde, Ein-Datei-Format)
+
+#### AC-1: Eine kombinierte Datei hochladen → Vorschau vor dem Speichern
+- [x] Drag&Drop/Dateiauswahl für den einen Slot funktioniert, Vorschau erscheint erst nach „Datei prüfen", nichts wird vor Bestätigung gespeichert
+
+#### AC-2: Nur ein Block vorhanden → klare Meldung, welcher Block fehlt
+- [x] Journey-only-Datei → „In dieser Datei wurde kein Landingpage-Konzept-Block gefunden."; Konzept-only-Datei → umgekehrte Meldung. Bestätigen-Button erscheint erst nach explizitem „Trotzdem fortfahren" (identisches Gating-Muster wie die frühere Kreuz-Format-Warnung). Zusätzlich verifiziert: der „Trotzdem fortfahren"-Pfad speichert tatsächlich korrekt (nur der vorhandene Block landet in der DB, kein Crash) — ein bisher ungetesteter neuer Codepfad seit der Ein-Datei-Umstellung
+
+#### AC-3: Keine `.md`-Datei → Ablehnung mit Fehlermeldung
+- [x] `.txt`-Datei wird sofort mit „Nur .md-Dateien werden unterstützt." abgelehnt
+
+#### AC-4: Strukturabweichung → erkannte Teile übernehmen, Rest als Lücke markieren
+- [x] Fehlende „Frage 3"-Antwort korrekt als „Lücke — nicht angegeben" markiert, alle anderen Felder normal sichtbar
+
+#### AC-5: Praktisch keine erkennbare Struktur → Hard-Fail statt leerer Vorschau
+- [x] Reiner Fließtext ohne jede Vorlagen-Struktur wird mit klarer Fehlermeldung abgelehnt
+
+#### AC-6: Vollständiges granulares Speichern beider Blöcke + eine Rohdatei im Bucket
+- [x] Nach Bestätigung: >5 Sections, >30 Fields in der DB verifiziert, `raw_file_path` = `{projectId}/interview-import.md`, Rohdatei im `imports`-Bucket abrufbar und enthält beide Block-Überschriften; alte Zwei-Datei-Pfade (`journey-transkript.md`/`konzept.md`) nachweislich nicht mehr vorhanden
+
+#### AC-7: Post-Import-Lese-Übersicht
+- [x] Nach hartem Reload zeigt die Seite die vollständige Journey- und Konzept-Übersicht — bestätigt, dass die Daten aus der DB kommen
+
+#### AC-8: Re-Import mit abhängigen Daten → aktive Bestätigung nötig
+- [x] **Jetzt vollständig testbar** (war in der ersten/zweiten Runde ein Stub, da PROJ-4 noch nicht existierte — PROJ-4 ist seit dieser Runde deployt, `hasDependentImportData()` prüft echte `enrichments`-Zeilen). Warnung „…abhängige Daten…" erscheint korrekt vor dem Übernehmen; „Abbrechen" lässt den bestehenden Import-Datensatz nachweislich unverändert (gleiche `id`, gleiches `updated_at`). Zusätzlich end-to-end über den echten PROJ-4-Upload-Flow bestätigt (`tests/PROJ-4-ki-anreicherung.spec.ts`)
+
+#### AC-9: Re-Import ohne abhängige Daten → normaler Ersatz-Import
+- [x] Zweiter Import über denselben Import-Datensatz bestätigt (gleiche `interview_imports.id`, gleiche Section-Anzahl nach Ersatz statt Verdopplung)
+
+#### AC-10: Fehlerverhalten bei Upload-/Parse-Fehlern
+- [x] Der Hard-Fail-Pfad (AC-5) verhält sich korrekt. Der mehrstufige Speichervorgang läuft über die atomare Postgres-Funktion `save_interview_import` (Regressionstest bestätigt weiterhin: kein Teildatenverlust bei einem gezielt provozierten Fehlschlag). Per Code-Review bestätigt (nicht live fehler-injiziert, konsistent mit dem Vorgehen der ersten Runde): bei einem `saveImport`-Fehler bleibt `rawText`/`file` im Client-State erhalten, der Nutzer landet in der Vorschau mit sichtbarer Fehlermeldung und kann ohne erneutes Datei-Auswählen erneut bestätigen
+
+### Edge Cases Status (dritte Runde)
+
+#### EC-1/EC-2: Variable Fragenanzahl/Abschnittsanzahl
+- [x] Unverändert gültig — reine Journey-/Konzept-internen Parser wurden durch die Ein-Datei-Umstellung nicht angefasst (siehe Vitest-Regression, 108/108 grün)
+
+#### EC-3/EC-4: `[frei]`-Antwortformat, „entfällt" als bewusst leerer Wert
+- [x] Unverändert gültig (gleiche Begründung), zusätzlich in der neuen E2E-Suite erneut live im Vorschau-DOM verifiziert („entfällt" bei Differenzierung, kein Lücken-Badge)
+
+#### EC-5: Gleichzeitiger Import zweier Mitarbeiter
+- [x] Unverändert: kein Konfliktschutz, last-write-wins (wie spezifiziert, kein Bug)
+
+#### EC-6: 5-MB-Limit
+- [x] Datei > 5 MB wird mit „Die Datei ist größer als 5 MB." abgelehnt — jetzt für die eine kombinierte Datei statt vorher je Datei
+
+#### EC-7 (Neu): Vertauschte Blockreihenfolge (Konzept vor Journey)
+- [x] Kombinierte Datei mit Konzept-Block zuerst wird korrekt in beide Blöcke aufgeteilt und geparst, kein Datenverlust
+
+#### EC-8 (Neu): Datei im alten Zwei-Datei-Format hochgeladen
+- [x] Eine reine Journey-Transkript.md (wie sie im alten Format existierte) wird korrekt als „ein Block fehlt" erkannt, nicht als Sonderfall des alten Formats behandelt oder automatisch migriert — deckt sich mit dem bewussten Breaking-Change-Entscheid
+
+### Security Audit Results (dritte Runde)
+- [x] Authentication: `/kunden/[kundeId]/[projektId]` ohne Login → Redirect zu `/login?redirect=…`; `checkImportFiles`/`saveImport` beide serverseitig mit `requireAuth()` abgesichert (nicht nur client-seitiger Redirect)
+- [x] Authorization/RLS/GRANTs: `anon`-Key hat weiterhin weder SELECT- noch INSERT-Recht auf alle vier Import-Tabellen (Code `42501`, GRANT-Ebene) — durch die Spalten-Migration unverändert, direkt gegengeprüft
+- [x] Storage: `imports`-Bucket-Policy weiterhin auf `authenticated` beschränkt, `public: false`
+- [x] Input validation/XSS: eingeschleuster `<img src=x onerror=alert(1)>`-Payload wird weiterhin als reiner Text gerendert (React-Escaping unverändert)
+- [x] Cross-Feature-Zugriffskontrolle: `deleteProject` blockiert weiterhin korrekt, solange ein Interview-Import existiert
+- [x] **BUG-4 — gefunden und noch während `/backend` selbst behoben (siehe unten):** `anon` hatte durch eine DROP+CREATE-Migration kurzzeitig wieder EXECUTE-Recht auf `save_interview_import()`. Unabhängig re-verifiziert (`has_function_privilege`) und mit einem permanenten Regressionstest abgesichert
+
+### Regression Testing (dritte Runde)
+- [x] PROJ-2-Suite (12 Tests × 2 Browser): weiterhin grün
+- [x] PROJ-17-Suite (4 Tests × 2 Browser): weiterhin grün
+- [x] **PROJ-4-Suite: 2 Setup-Stellen gebrochen durch die PROJ-3-UI-Änderung, in dieser Runde repariert** (siehe Vorgehen oben), danach 4/4 × 2 Browser grün — inkl. des End-to-End-Belegs für AC-8 (abhängige-Daten-Warnung) über den echten PROJ-4-Flow
+- [x] **PROJ-5-Suite: 1 Setup-Stelle gebrochen durch dieselbe UI-Änderung, in dieser Runde repariert**, danach 4/4 × 2 Browser grün
+- [x] Gesamt: 72/72 Playwright-Tests grün (Chromium + Mobile Safari), 108/108 Vitest-Unit-Tests grün, `npm run lint` und `npm run build` sauber
+
+### Bugs Found (dritte Runde)
+
+#### BUG-4: `save_interview_import()` hatte kurzzeitig wieder EXECUTE-Recht für `anon` (Grant-Regression durch DROP+CREATE)
+- **Severity:** War High (Zugriffskontrollverletzung auf eine datenschreibende Funktion), **Status: bereits behoben, nicht mehr offen**
+- **Gefunden durch:** Der Backend-Agent selbst, noch innerhalb derselben `/backend`-Sitzung (nicht durch diese QA-Runde neu entdeckt) — hier lediglich unabhängig gegengeprüft und mit einem permanenten Regressionstest abgesichert, damit ein künftiger DROP+CREATE-Fehler nicht erneut unbemerkt bliebe
+- **Ursache:** Die Migration `interview_imports_single_file` hat `save_interview_import()` per `DROP FUNCTION` + `CREATE OR REPLACE FUNCTION` neu angelegt (nötig, weil sich die Parameterliste änderte). Postgres vergibt an neu angelegte Funktionen implizit `EXECUTE` für `PUBLIC`, wovon `anon` erbt — der ursprünglich in `save_interview_import_atomic` bewusst gesetzte `REVOKE EXECUTE … FROM PUBLIC` ging dadurch verloren
+- **Steps to Reproduce (historisch, bereits behoben):** Direkt nach der DROP+CREATE-Migration lieferte `has_function_privilege('anon', 'save_interview_import(...)', 'execute')` `true` statt `false`
+- **Status: FIXED (2026-08-28, noch innerhalb der `/backend`-Sitzung).** Folgemigration `save_interview_import_revoke_public_execute` nimmt `EXECUTE` von `PUBLIC` und `anon` explizit wieder zurück. Verifiziert: `has_function_privilege('anon', …)` liefert `false`, `has_function_privilege('authenticated', …)` weiterhin `true`. Permanenter Regressionstest in `tests/PROJ-3-import-werkstatt.spec.ts` (`anon Supabase key cannot execute save_interview_import() directly`)
+
+### Summary (dritte Runde)
+- **Acceptance Criteria:** 10/10 vollständig bestanden (AC-8 erstmals vollständig testbar, da PROJ-4 jetzt deployt ist)
+- **Bugs Found:** 1 total (High) — **bereits vor dieser QA-Runde behoben** (vom Backend-Agenten selbst gefunden und gefixt), hier unabhängig re-verifiziert und regressionsgesichert. Keine neuen offenen Bugs in dieser Runde gefunden
+- **Security:** Pass — RLS/GRANTs auf allen vier Tabellen unverändert korrekt, `save_interview_import()`-Zugriffsrecht re-verifiziert und regressionsgesichert, XSS-sicher, Auth/Cross-Feature-Zugriffskontrolle korrekt
+- **Production Ready:** YES
+- **Recommendation:** Deploy — Status auf **Approved** gesetzt. Nächster Schritt: `/deploy PROJ-3`.
+
+---
+
+## Historische Runden 1+2 (altes Zwei-Datei-Format, überholt seit `/refine` 2026-08-28)
 
 **Nachtrag zur zweiten Runde:** Erste Runde fand BUG-1 (High, fehlende Transaktion in `saveImport`) und BUG-2 (Low, verwaiste Storage-Datei bei partiellem Fehlschlag). Beide wurden zusammen behoben (`save_interview_import`-RPC, siehe Implementierungsnotizen/Decision Log). Diese zweite Runde verifiziert den Fix unabhängig von der Bugfix-Implementierung: vollständige Regression neu ausgeführt, RLS/GRANTs auf der neuen Funktion erneut direkt gegen die DB geprüft, AC-11 unten aktualisiert. AC-1 bis AC-10 sowie alle Edge Cases und der Security-Audit unten sind unverändert gegenüber der ersten Runde weiterhin gültig (nichts an der bereits verifizierten Funktionalität wurde durch den Fix berührt) und wurden durch die erneute vollständige Testausführung (Playwright + Vitest) bestätigt.
 
