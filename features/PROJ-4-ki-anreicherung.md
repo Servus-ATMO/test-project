@@ -1,8 +1,8 @@
 # PROJ-4: KI-Anreicherung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-28 (QA)
+**Last Updated:** 2026-08-28 (Deploy)
 
 ## Implementierungsnotizen
 - **Datenmodell live umgesetzt:** fünf neue Tabellen (`enrichments`, `enrichment_personas`, `enrichment_dimensions`, `enrichment_edges`, `enrichment_conflicts`), Migrationen `create_enrichment_tables` + `save_enrichment_atomic` + `grant_enrichment_tables_service_role`. Gleiches Shared-Visibility-Muster wie PROJ-3 (RLS `true` für `authenticated`, kein Zugriff für `anon`, explizit gegen die DB verifiziert: `has_table_privilege('anon', 'enrichments', 'SELECT')` → `false`). `enrichment_dimensions.dimension_name` per CHECK-Constraint auf die 23 festen Namen begrenzt; `enrichment_edges`/`enrichment_conflicts` erzwingen per CHECK, dass genau die zum jeweiligen Typ (`informs`/`shapes`, `explicit`/`emergent`) passenden Quell-/Zielspalten gesetzt sind.
@@ -318,4 +318,15 @@ Gespeichert in: Supabase (PostgreSQL), gleiche Shared-Visibility wie PROJ-3/PROJ
 - **Recommendation:** Deploy — Status auf **Approved** gesetzt. Nächster Schritt: `/deploy PROJ-4`.
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-08-28
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Vercel Project:** atmodesign/test-project
+
+Alle drei PROJ-4-Migrationen (`create_enrichment_tables`, `save_enrichment_atomic`, `grant_enrichment_tables_service_role`) liefen bereits während `/backend`/`/qa` gegen dieselbe Supabase-Instanz, die auch von Produktion genutzt wird (kein separates Staging-Projekt, siehe PROJ-1) — kein zusätzlicher Migrationsschritt beim Deploy nötig. Keine neuen Umgebungsvariablen und kein neues Secret (bewusste Architekturentscheidung: kein appseitiger KI-API-Aufruf, siehe Tech Design). Kein neues npm-Paket.
+
+Live verifiziert nach Deploy: `/login` lädt fehlerfrei (200), ein geschützter Pfad (`/kunden`) leitet unauthentifiziert korrekt mit 307 zu `/login` weiter, Security-Header aktiv (`x-frame-options: DENY`, `strict-transport-security`, `x-content-type-options: nosniff`, `referrer-policy`). Kein Test-Kunde/-Projekt in Produktion angelegt (gleiche Vorsicht wie bei den vorherigen Deploys) — die volle Funktionalität (Prompt-Erzeugung, Upload/Parsing, Vorschau, Speichern, Re-Anreicherung, PROJ-3-Cross-Feature-Warnung, RLS) wurde bereits in `/qa` ausführlich gegen genau diese Supabase-Instanz verifiziert.
+
+PROJ-2-, PROJ-3-, PROJ-4- und PROJ-17-Regressionssuite (25/25, Chromium; PROJ-4 zusätzlich 4/4 unter Mobile Safari) liefen vor dem Push lokal grün gegen dieselbe Datenbank. `npm run build`/`npm run lint` sauber.
+
+**Hinweis zur Build-Verifikation:** Der Vercel-CLI-Zugriff war in dieser Sitzung durch die Auto-Mode-Berechtigungen blockiert (kein Vercel-Token verfügbar) — die Verifikation erfolgte ausschließlich über direkte HTTP-Prüfungen der Produktions-URL nach einer Wartezeit für den automatischen GitHub-Push-Deploy, nicht über eine direkte Prüfung des Vercel-Build-Logs selbst.
