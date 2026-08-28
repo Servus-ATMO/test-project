@@ -365,45 +365,67 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
         </Select>
       </div>
 
-      {/* flex-wrap statt starrem 3-Spalten-Grid: auf schmalen Viewports
-          wuerde jede Grid-Zelle nur ~1/3 der Breite bekommen und den
-          laengsten Label-Text ("Content-Blöcke (Ebene 3) anzeigen") auf
-          mehrere Zeilen umbrechen (eigene Verifikation, 2026-08-28, 375px) -
-          flex-wrap laesst jeden Schalter stattdessen in seiner natuerlichen
-          Breite umbrechen. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex items-center gap-2">
-          <Switch
-            id="ebene1-toggle"
-            checked={ebene1Visible}
-            disabled={ebene1Visible && visibleColumnCount === 1}
-            onCheckedChange={handleEbene1Toggle}
-          />
-          <Label htmlFor="ebene1-toggle" className="text-sm">
-            Themenblöcke (Ebene 1) anzeigen
-          </Label>
+      {/* Spalten-Header direkt ueber der jeweiligen Spalte (Nutzer-Feedback
+          2026-08-28, nach Referenz-Sketch: Eyebrow + Titel + ein kompakter
+          Schalter "ein/ausblenden" statt eines langen Labels) - ersetzt die
+          vorherige, davon losgeloeste Schalter-Reihe. Ab "sm" nebeneinander
+          (3 Spalten passen erst ab da nebeneinander ohne Textabschneidung/
+          -umbruch, eigene Verifikation 2026-08-28, 375px); darunter
+          gestapelt, damit jeder Header seine volle Breite behaelt. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="min-w-0 space-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Ebene 1 · Input
+          </div>
+          <div className="text-sm font-semibold">Themenblöcke</div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="ebene1-toggle"
+              aria-label="Themenblöcke (Ebene 1) anzeigen"
+              checked={ebene1Visible}
+              disabled={ebene1Visible && visibleColumnCount === 1}
+              onCheckedChange={handleEbene1Toggle}
+            />
+            <Label htmlFor="ebene1-toggle" className="text-xs text-muted-foreground">
+              ein/ausblenden
+            </Label>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Switch
-            id="ebene2-toggle"
-            checked={ebene2Visible}
-            disabled={ebene2Visible && visibleColumnCount === 1}
-            onCheckedChange={handleEbene2Toggle}
-          />
-          <Label htmlFor="ebene2-toggle" className="text-sm">
-            Profildimensionen (Ebene 2) anzeigen
-          </Label>
+        <div className="min-w-0 space-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Ebene 2 · verdeckt
+          </div>
+          <div className="text-sm font-semibold">Profildimensionen</div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="ebene2-toggle"
+              aria-label="Profildimensionen (Ebene 2) anzeigen"
+              checked={ebene2Visible}
+              disabled={ebene2Visible && visibleColumnCount === 1}
+              onCheckedChange={handleEbene2Toggle}
+            />
+            <Label htmlFor="ebene2-toggle" className="text-xs text-muted-foreground">
+              ein/ausblenden
+            </Label>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Switch
-            id="ebene3-toggle"
-            checked={ebene3Visible}
-            disabled={ebene3Visible && visibleColumnCount === 1}
-            onCheckedChange={handleEbene3Toggle}
-          />
-          <Label htmlFor="ebene3-toggle" className="text-sm">
-            Content-Blöcke (Ebene 3) anzeigen
-          </Label>
+        <div className="min-w-0 space-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Ebene 3 · Output
+          </div>
+          <div className="text-sm font-semibold">Content-Blöcke</div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="ebene3-toggle"
+              aria-label="Content-Blöcke (Ebene 3) anzeigen"
+              checked={ebene3Visible}
+              disabled={ebene3Visible && visibleColumnCount === 1}
+              onCheckedChange={handleEbene3Toggle}
+            />
+            <Label htmlFor="ebene3-toggle" className="text-xs text-muted-foreground">
+              ein/ausblenden
+            </Label>
+          </div>
         </div>
       </div>
 
