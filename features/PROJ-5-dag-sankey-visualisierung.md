@@ -2,7 +2,7 @@
 
 ## Status: Approved
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-29 (QA)
+**Last Updated:** 2026-08-29 (Refine)
 
 **Hinweis:** Die live deployte Version (siehe Deployment-Abschnitt) enthält noch nicht das Graph-UI-Batch (per-Spalten-Sichtbarkeit, Persona-Filter, Ebene-2-Dimensionsgruppierung, statische Spalten statt React-Flow-Canvas) — implementiert und durch `/qa` bestätigt (15/15 AC PASS, 0 neue Bugs, 1 unveränderter Low-Bug BUG-9, Production Ready: YES), aber noch nicht deployed. Nächster Schritt: `/deploy PROJ-5`.
 
@@ -62,6 +62,9 @@ Kein Content-Block lässt sich direkt aus einer Frage ableiten — der Weg führ
 - Als Agentur-Mitarbeiter möchte ich auf einen Content-Block klicken und sofort sehen, welche Journey-Antworten und Profildimensionen ihn geprägt haben (Herkunft rückwärts), damit ich Rückfragen des Kunden ("warum ist das so?") direkt beantworten kann.
 - Als Agentur-Mitarbeiter möchte ich auf einen Themenblock klicken und sehen, welche Dimensionen und Content-Blöcke er beeinflusst (Wirkung vorwärts) inkl. der zugehörigen Frage/Antwort im Klartext, damit ich den Einfluss einer einzelnen Antwort auf das Gesamtkonzept einschätzen kann.
 - Als Agentur-Mitarbeiter möchte ich Ebene 2 (Profildimensionen) standardmäßig ausblenden können, damit der Graph für einen ersten Überblick nicht überladen wirkt, ohne dass mir dabei der Zusammenhang zwischen Frage und Content-Block verloren geht.
+- Als Agentur-Mitarbeiter möchte ich jede der drei Spalten unabhängig voneinander ein-/ausblenden können, damit ich den Graph gezielt auf die für die aktuelle Fragestellung relevanten Ebenen reduzieren kann.
+- Als Agentur-Mitarbeiter möchte ich alle Verbindungen einer bestimmten Persona auf einen Blick hervorgehoben sehen, damit ich dem Kunden gezielt erklären kann, wie sich eine einzelne Zielgruppe durchs Konzept zieht — auch während ich parallel einzelne Knoten anklicke, ohne die Persona-Auswahl zu verlieren.
+- Als Agentur-Mitarbeiter möchte ich wiederkehrende Profildimensionen (mehrere Personas, gleiche Dimension) kompakt als eine aufklappbare Gruppe sehen, damit Ebene 2 bei vielen Personas nicht unübersichtlich wird.
 - Als Agentur-Mitarbeiter möchte ich bereits erkannte Konflikte (aus PROJ-4) visuell markiert sehen, damit mir Widersprüche im Konzept auffallen, auch bevor die eigentliche Konfliktauflösung (PROJ-7) gebaut ist.
 - Als Kunde möchte ich (perspektivisch, sobald PROJ-10 existiert) denselben Graph einsehen können wie die Agentur, damit die Herleitung des Konzepts für mich genauso nachvollziehbar ist wie für den Agentur-Mitarbeiter — PROJ-5 baut dafür keine reduzierte/vereinfachte Extra-Ansicht, sondern exakt eine gemeinsame Ansicht für beide Rollen.
 
@@ -92,8 +95,18 @@ Kein Content-Block lässt sich direkt aus einer Frage ableiten — der Weg führ
 - [x] Angenommen der Nutzer klickt auf einen konfliktmarkierten Knoten, wenn das Dossier-Panel öffnet, dann zeigt es zusätzlich zu Herkunft/Wirkung die Konflikt-Beschreibung als Text, ohne Lösungsoptionen anzubieten
 - [x] Angenommen der Nutzer ist nicht eingeloggt, wenn er die Graph-Unterseite eines Projekts aufruft, dann wird er zu `/login` umgeleitet (gleiches Muster wie PROJ-3/PROJ-4)
 
+**Graph-UI-Batch (nachträglich formalisiert per `/refine`, 2026-08-29 — bereits implementiert und in der QA-Runde vom 2026-08-29 verifiziert, siehe QA Test Results):**
+
+- [x] Angenommen der Graph zeigt alle drei Ebenen, wenn der Nutzer den Schalter einer einzelnen Spalte betätigt, dann wird ausschließlich diese Spalte aus-/eingeblendet, unabhängig vom Zustand der beiden anderen Spalten, und die verbleibenden sichtbaren Spalten rücken lückenlos zusammen
+- [x] Angenommen nur noch eine einzige Spalte ist sichtbar, wenn der Nutzer versucht, auch deren Schalter zu deaktivieren, dann bleibt die Spalte sichtbar und der Schalter ist deaktiviert
+- [x] Angenommen kein Knoten ist ausgewählt, wenn der Nutzer im globalen Persona-Filter eine Persona auswählt, dann werden alle Knoten und Kanten hervorgehoben, die zu mindestens einer Dimension-Instanz dieser Persona gehören, alle anderen werden ausgegraut
+- [x] Angenommen ein Persona-Filter ist aktiv, wenn der Nutzer einen Knoten anklickt und das Dossier-Panel öffnet oder schließt, dann bleibt die Persona-Auswahl im Filter-Dropdown unverändert bestehen
+- [x] Angenommen ein Persona-Filter ist aktiv, wenn der Nutzer zusätzlich einen Knoten anklickt, dann bestimmen ausschließlich dessen eigene Verbindungen das Highlight (identisch zum Verhalten ohne aktiven Filter) — sobald das Dossier wieder geschlossen wird, greift wieder das Persona-Highlight
+- [x] Angenommen eine Profildimension hat für mehrere Personas eigene Instanzen, wenn der Graph gerendert wird, dann erscheint sie standardmäßig als kollabierter Gruppen-Knoten mit Instanzen-Zähler, der durch Klick auf-/zuklappbar ist
+- [x] Angenommen eine Profildimension hat projektweit nur eine einzige Instanz (z. B. „Umsetzungsrahmen", „Target Audience"), wenn der Graph gerendert wird, dann erscheint sie immer als einzelner Knoten, nie als Gruppe
+
 ## Edge Cases
-- Sehr viele Knoten (z. B. 23 Dimensionen × 3 Personas = bis zu ~69 Ebene-2-Knoten): Der Graph muss nutzbar bleiben (Zoom/Pan oder vertikales Scrollen innerhalb einer Spalte), auch wenn kein hartes Performance-Ziel definiert ist — reale Projektgrößen sind überschaubar
+- Sehr viele Knoten (z. B. 23 Dimensionen × 3 Personas = bis zu ~69 Ebene-2-Knoten): Der Graph muss nutzbar bleiben — **aktualisiert (2026-08-29):** kein Zoom/Pan mehr (React Flow entfernt), stattdessen wächst die betroffene Spalte vertikal mit ihrem Inhalt, bei Bedarf scrollt die gesamte Canvas horizontal; kein hartes Performance-Ziel definiert, reale Projektgrößen sind überschaubar
 - „Umsetzungsrahmen" ist die einzige projektweite Dimension ohne Persona-Bezug — erscheint als einzelner Knoten ohne Persona-Kennzeichnung, unabhängig von der Anzahl erkannter Personas
 - Eine Persona ohne jede Dimension-Instanz (z. B. weil die KI für sie nirgends einen abweichenden Wert fand) taucht in Ebene 2 nicht separat auf — nur die Personas, für die tatsächlich mindestens eine Instanz gespeichert wurde
 - Mobile/kleine Bildschirme (375px, siehe Frontend-Regeln): Ein mehrspaltiges Sankey-Layout mit Dossier-Panel ist auf 375px nicht sinnvoll 1:1 darstellbar — Lösung (horizontales Scrollen, Dossier als Bottom-Sheet o. ä.) ist eine Frontend-Entscheidung, siehe Open Questions
@@ -106,7 +119,7 @@ Kein Content-Block lässt sich direkt aus einer Frage ableiten — der Weg führ
 
 ## Open Questions
 - [x] ~~Konkretes Mobile-Verhalten (375px) für ein mehrspaltiges Graph-Layout mit Dossier-Panel~~ — geklärt bei `/frontend` (2026-08-28): React Flows eingebautes Touch-Pan/Zoom reicht, kein eigener Mobile-Code-Pfad; Dossier-Panel wird über die bereits gewählte `Sheet`-Komponente auf schmalen Screens automatisch zum Vollbild-Overlay
-- [ ] Zoom/Pan- oder Scroll-Mechanik bei sehr vielen Ebene-2-Knoten — technische Umsetzung an `/architecture`/`/frontend`
+- [x] ~~Zoom/Pan- oder Scroll-Mechanik bei sehr vielen Ebene-2-Knoten~~ — geklärt bei `/frontend` (2026-08-29): kein Zoom/Pan, stattdessen wächst die Spalte vertikal mit ihrem Inhalt, bei Bedarf horizontales Scrollen der Canvas (`overflow-x-auto`)
 - [ ] Genaue visuelle Unterscheidung Konflikt-Badge vs. Lücken-Badge vs. Should-/Nice-to-Have-Badge (aus der Konzeptfäden-Spezifikation, Abschnitt 5, für spätere Wireframe-Kopplung relevant) — Detailfrage für `/frontend`, nicht produktentscheidend für MVP
 
 ## Decision Log
@@ -126,6 +139,11 @@ Kein Content-Block lässt sich direkt aus einer Frage ableiten — der Weg führ
 | Ebene-2-Schalter komprimiert Kanten beim Ausblenden auf direkte Frage→Block-Verbindungen, statt sie verschwinden zu lassen | Ebene 2 ist die einzige „verdeckte" Ebene der Konzeptfäden-Spezifikation — ihre Nachvollziehbarkeit soll auch beim Ausblenden erhalten bleiben | 2026-08-28 |
 | Graph lebt auf einer eigenen Unterseite (`/kunden/[kundeId]/[projektId]/graph` o. ä.), nicht als dritter Abschnitt auf der bestehenden Projekt-Detailseite | Spalten-Layout + Dossier-Panel brauchen viel Platz; Projekt-Detailseite hat mit Import-Werkstatt + KI-Anreicherung bereits zwei Bereiche | 2026-08-28 |
 | PROJ-5 ist rein lesend, keine Bearbeitung von Journey-Antworten | Editierbarkeit inkl. Branching ist PROJ-6, noch nicht gebaut | 2026-08-28 |
+| Statische, vertikal gestapelte Spalten + SVG-Kanten-Overlay statt einer zoom-/schwenkbaren React-Flow-Canvas | Explizite Nutzer-Vorgabe nach Sichtung der Referenz-Sketch-Ressource: „Keine Canvas in der ich hin und herscrollen kann. Das ist nicht notwendig." — `@xyflow/react` daraufhin vollständig entfernt | 2026-08-29 |
+| Highlight-Priorität: ein ausgewählter Knoten bestimmt immer sein eigenes Highlight, unabhängig von einem gleichzeitig aktiven Persona-Filter; der Filter übernimmt das Highlight erst wieder, sobald kein Knoten mehr ausgewählt ist | Nutzer-Korrektur nach einem konkreten Gegenbeispiel (Persona-Filter aktiv, Klick auf „Abschnitt 1: Navigation" ließ unverbundene Knoten fälschlich undimmed) — die ursprüngliche Umkehrung (Filter hat Vorrang) war falsch | 2026-08-29 |
+| Persona-Filter ist eine „sticky" Dropdown-Auswahl, die Knoten-Klicks (Dossier öffnen/schließen) übersteht | Nutzer-Bug-Report: Filter sprang beim Anklicken eines Knotens auf „Alle Personas" zurück — ungewolltes Verhalten, Filter soll bis zur bewussten Änderung/zum Ausblenden von Ebene 2 bestehen bleiben | 2026-08-29 |
+| Letzte verbleibende sichtbare Spalte kann nicht ausgeblendet werden | Verhindert einen komplett leeren, nicht mehr aussagekräftigen Graphen | 2026-08-28 |
+| Ebene-2-Dimensionsgruppierung nur für Dimensionen mit mehreren Persona-Instanzen, Einzelinstanzen werden nie gruppiert | Gruppierung bringt bei nur einer Instanz keinen Kompaktheits-Gewinn, würde aber eine unnötige zusätzliche Aufklapp-Interaktion erzwingen | 2026-08-28 |
 
 ### Technical Decisions
 <!-- Added by /architecture -->
