@@ -1,10 +1,10 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-28 (QA)
+**Last Updated:** 2026-08-28 (Deploy)
 
-**Hinweis:** Die Ein-Datei-Umstellung ist vollständig implementiert und QA-geprüft (dritte QA-Runde, siehe QA Test Results) — 10/10 Acceptance Criteria bestanden, keine offenen Bugs, production-ready. Nächster Schritt: `/deploy PROJ-3`.
+**Hinweis:** Die Ein-Datei-Umstellung ist live in Produktion (siehe Deployment-Abschnitt unten). Bereits importierte Bestandsdaten im alten Zwei-Datei-Format bleiben unverändert nutzbar, nur ein künftiger Re-Import verlangt die neue kombinierte Datei.
 
 ## Implementierungsnotizen
 - **Ein-Datei-Umstellung implementiert (`/backend`, 2026-08-28):**
@@ -450,3 +450,11 @@ Live verifiziert nach Deploy: `/login` lädt fehlerfrei (200), ein geschützter 
 PROJ-2-, PROJ-17- und PROJ-3-Regressionssuite (21/21, Chromium) liefen vor dem Push lokal grün gegen dieselbe Datenbank.
 
 **Nachträglich deployt (2026-08-28): BUG-3-Fix (siehe Implementierungsnotizen).** Commit `a0fc43a` gepusht, Vercel-Build `dpl_G5BCLJjYEbnM8wJ3uQi3DQoKfm6J` erfolgreich (Status Ready), Production-Alias `test-project-woad-theta.vercel.app` zeigt auf den neuen Build, `/login` liefert 200. Bereits gespeicherte Imports (z. B. "1. Testkunde") sind davon nicht automatisch betroffen — Re-Import nötig, siehe Implementierungsnotizen.
+
+**Nachträglich deployt (2026-08-28): Ein-Datei-Umstellung (`/refine`+`/architecture`+`/backend`+`/qa`).** Commit `25d3131` gepusht, Vercel-Build `dpl_EXaPWSYhJFS3pd3zo9oJbJQY9mCo` erfolgreich (Status Ready, 38s Build-Dauer), Production-Alias `test-project-woad-theta.vercel.app` zeigt auf den neuen Build. Der Push nach `main` enthielt zusätzlich das bereits QA-approved PROJ-5 (DAG/Sankey-Graph-Visualisierung) — kein separates Staging (siehe PROJ-1), Nutzer hat den gemeinsamen Push bewusst bestätigt (siehe PROJ-5-Spec für dessen eigenen Deployment-Eintrag).
+
+DB-Migrationen (`interview_imports_single_file`, `save_interview_import_revoke_public_execute`) liefen bereits während `/backend` gegen dieselbe Supabase-Instanz, die auch von Produktion genutzt wird — kein zusätzlicher Migrationsschritt beim Deploy nötig. Keine neuen Umgebungsvariablen. Keine neuen npm-Pakete.
+
+Live verifiziert nach Deploy: `/login` liefert 200, ein geschützter Projekt-Pfad leitet unauthentifiziert korrekt mit 307 weiter, `/kunden/[kundeId]/[projektId]/graph` (PROJ-5) ebenso 307, Security-Header aktiv (`x-frame-options: DENY`, `strict-transport-security`, `x-content-type-options: nosniff`, `referrer-policy`). Production-Alias bestätigt korrekt auf den neuen Build zeigend. Kein Test-Kunde in Produktion angelegt — die volle Funktionalität des Ein-Datei-Flows wurde bereits in `/qa` ausführlich gegen genau diese Supabase-Instanz verifiziert (72/72 Playwright-Tests, siehe QA Test Results).
+
+**Wichtig — Breaking Change live:** Ab diesem Deploy akzeptiert die Projekt-Detail-Seite nur noch die eine kombinierte Interview-Import-Datei (ein Upload-Slot). Der bereits importierte Bestandsdatensatz ("1. Testkunde", altes Zwei-Datei-Format) bleibt unverändert nutzbar (Implementierungsnotizen/Decision Log) — nur ein künftiger Re-Import verlangt jetzt die neue kombinierte Datei.

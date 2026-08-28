@@ -1,8 +1,8 @@
 # PROJ-5: DAG/Sankey-Graph-Visualisierung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-28 (QA)
+**Last Updated:** 2026-08-28 (Deploy)
 
 ## Implementierungsnotizen
 - **Graph-Modell als reine Bibliothek umgesetzt** (`src/lib/graph/build-graph-model.ts`, `types.ts`): rechnet `ParsedImport` + `Enrichment` (beide bereits vorhanden aus PROJ-3/PROJ-4) in Knoten/Kanten für alle drei Ebenen um. "Notizen zur Aufnahme" bewusst aus Ebene 1 ausgeschlossen (kein Themenblock). Referenziert eine `informs`-Kante ein Feld außerhalb der abgebildeten Themenblöcke (z. B. ein Notizen- oder Konzept-Feld), wird sie ohne Absturz übersprungen, der Dimension-Knoten selbst bleibt trotzdem bestehen — Best-Effort wie im Rest des Projekts. Komprimierte Frage→Content-Block-Kanten werden vorab berechnet und auf ein Vorkommen je Paar dedupliziert. 11 Unit-Tests (`build-graph-model.test.ts`) decken Empty-Label-Fallback, Gap-Knoten, isolierte Content-Blöcke, übersprungene Fremd-Referenzen, Kompression und beide Konflikttypen ab.
@@ -228,4 +228,11 @@ Alle 15 Acceptance Criteria manuell im Browser durchgespielt und zusätzlich in 
 - **Recommendation:** Deploy. BUG-9 optional in einem späteren Zyklus klären (z. B. per Nutzer-Entscheidung: Themenblock-Klick soll wieder eine aggregierte Dossier-Ansicht öffnen, oder AC-6 wird auf den jetzigen Stand nachgezogen) — blockiert das Deployment nicht.
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-08-28
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Vercel Project:** atmodesign/test-project
+
+Zusammen mit PROJ-3s Ein-Datei-Umstellung deployt (gemeinsamer Push nach `main`, kein separates Staging, siehe PROJ-1 — Nutzer hat den kombinierten Deploy-Umfang bewusst bestätigt). Commit `25d3131`, Vercel-Build `dpl_EXaPWSYhJFS3pd3zo9oJbJQY9mCo` erfolgreich (Status Ready, 38s Build-Dauer), Production-Alias `test-project-woad-theta.vercel.app` zeigt auf den neuen Build. Keine DB-Migration für PROJ-5 selbst nötig (rein lesende Ansicht auf bereits bestehende PROJ-3/PROJ-4-Tabellen). Neues npm-Paket `@xyflow/react` bereits über `package.json`/`package-lock.json` im Repo, kein zusätzlicher Vercel-Setup-Schritt. Keine neuen Umgebungsvariablen.
+
+Live verifiziert nach Deploy: `/kunden/[kundeId]/[projektId]/graph` leitet unauthentifiziert korrekt mit 307 zu `/login?redirect=...` weiter, Security-Header aktiv, Production-Alias bestätigt korrekt auf den neuen Build zeigend. Kein Test-Kunde in Produktion angelegt — die volle Funktionalität (Highlight/Trace, Edge-Rollup, Dossier-Panel, Persona-Filter-Grundlage) wurde bereits in `/qa` ausführlich gegen genau diese Supabase-Instanz verifiziert (30/30 + 4/4 Mobile-Safari-Regression, siehe QA Test Results).
