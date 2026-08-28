@@ -1,10 +1,10 @@
 # PROJ-3: Import-Werkstatt
 
-## Status: Planned
+## Status: Architected
 **Created:** 2026-08-25
-**Last Updated:** 2026-08-28 (Refine)
+**Last Updated:** 2026-08-28 (Architecture)
 
-**Hinweis:** Die aktuell live deployte Version läuft weiterhin im alten Zwei-Datei-Format — dieser Spec-Stand beschreibt die per `/refine` (2026-08-28) beschlossene Umstellung auf ein Ein-Datei-Format und ist noch nicht implementiert. Status auf „Planned" gesetzt, da die Kernänderung (Datenmodell/Parsing-Aufteilung) eine neue `/architecture`-Runde für die betroffenen Teile braucht.
+**Hinweis:** Die aktuell live deployte Version läuft weiterhin im alten Zwei-Datei-Format — dieser Spec-Stand beschreibt die per `/refine` (2026-08-28) beschlossene und jetzt technisch entworfene Umstellung auf ein Ein-Datei-Format, noch nicht implementiert. Nächster Schritt: `/backend` (Datenmodell-Änderung + Aufteilungs-Logik) und `/frontend` (ein Upload-Slot statt zwei).
 
 ## Implementierungsnotizen
 - **Bugfix aus echtem Nutzungsfeedback (BUG-3, 2026-08-28):** Auf der Projekt-Detail-Seite zeigte die Journey-Übersicht für jede der zehn Fragen "Gestellt" und "Antwort" als Lücke, obwohl die Datei inhaltlich vollständig war (Bug-Report am realen Import von "1. Testkunde", per Screenshot auf der Import-Seite). Ursache: Der tatsächliche Output des externen Interview-Prompts weicht bei den nummerierten Fragen vom Wortlaut der `Journey-Transkript-Vorlage.md` ab — die Frage steht als reiner Freitext-Absatz direkt nach der "### Frage N"-Überschrift (kein `**Gestellt:**`-Label), die Optionen stehen als rohe `A) …`–`F) …`-Zeilen statt einer `**Optionen:**`-Liste, und die Antwort steht unter `**Gewählte Antwort:**` statt `**Antwort:**`. Der Parser kannte nur das Vorlagenformat und markierte dadurch beide Felder fälschlich als Lücke, obwohl `Gewählte Antwort` als eigenständiges, unerwartetes Feld korrekt mit Inhalt erschien — sichtbar daran, dass genau dieses Feld in der Vorschau echten Text zeigte, während die beiden erwarteten Felder daneben leer blieben. Fix in `src/lib/imports/parse-utils.ts`: neue Funktion `buildFrageFields()` (ersetzt den bisherigen generischen `buildFields()`-Aufruf für Journey-Fragen) unterscheidet jetzt bewusst zwischen "Label komplett abwesend" (Freitext-Fallback: Absatz vor der ersten `A)`-Optionszeile bzw. vor dem nächsten erkannten Label wird als Frage gewertet, `A)`–`F)`-Zeilen werden als Optionen gesammelt) und "Label vorhanden, aber Platzhalter" (bleibt wie bisher eine sichtbare Lücke) — und akzeptiert `Gewählte Antwort` als gleichwertigen Namen für `Antwort`, ohne es zusätzlich als separates Feld zu duplizieren. Das alte Vorlagenformat (`**Gestellt:**`/`**Optionen:**`/`**Antwort:**`) bleibt vollständig unterstützt, alle bestehenden Tests liefen unverändert grün. Root Cause bestätigt über SQL-Abgleich der bereits importierten `import_fields`-Zeilen aller 10 Frage-Einträge (100 % konsistentes Muster: `Gestellt`/`Antwort` = Lücke, `Gewählte Antwort` = gefüllt) sowie über die im tatsächlichen Prompt-Referenzdokument bestätigte `A)`–`F)`-Optionsschreibweise (ein Test gegen die exakte Original-Rohdatei war nicht möglich, da diese nicht im Repo oder in der DB als Rohtext vorliegt — nur die geparsten Felder sind gespeichert). Regressionsabdeckung: 3 neue Unit-Tests (`parse-utils.test.ts`, `buildFrageFields` direkt) + 1 neuer Integrationstest (`parse-journey.test.ts`, voller Parser-Durchlauf), plus ein neuer permanenter E2E-Test (`tests/PROJ-3-import-werkstatt.spec.ts`, Fixture `proj3-journey-real-format.md`) — echter Upload/Vorschau-Durchlauf im Browser gegen den lokalen Dev-Server, bestätigt live im DOM, dass Frage 1/2 vollständig als "found" erscheinen und die bewusst unbeantwortete Frage 3 weiterhin korrekt als Lücke markiert bleibt. **Wichtig:** Bereits gespeicherte Imports (z. B. "1. Testkunde") behalten die zum Importzeitpunkt geparsten Lücken, bis sie über den bestehenden "Erneut importieren"-Button neu eingelesen werden — dieser Fix wirkt nur auf neue bzw. erneute Imports, es gibt bewusst kein automatisches Nachparsen bestehender Datenbank-Zeilen im Hintergrund.
@@ -110,6 +110,11 @@
 <!-- Added by /architecture -->
 | Decision | Rationale | Date |
 |----------|-----------|------|
+| **Ein-Datei-Umstellung (`/architecture`, 2026-08-28):** Aufteilung der kombinierten Datei über die bereits vorhandenen H1-Überschriften der beiden Vorlagen (`# Journey-Transkript`, `# Landingpage-Konzept`), keine neue Trennsyntax | Kleinster möglicher Eingriff — die bestehenden, bereits getesteten `parseJourney()`/`parseKonzept()`-Funktionen bleiben vollständig unverändert, nur eine dünne Aufteilungs-Schicht davor | 2026-08-28 |
+| `detectDocumentType()`/`checkCrossFormat()` (`format-detect.ts`) werden entfernt, nicht weiterverwendet | Das „falscher Slot"-Problem, das diese Heuristik löste, kann mit nur einem Upload-Slot nicht mehr auftreten — die neue „Block fehlt"-Prüfung ist eine einfachere Existenzprüfung der beiden bekannten Überschriften, keine Dokumenttyp-Erkennung mehr nötig | 2026-08-28 |
+| `interview_imports.journey_file_path`/`konzept_file_path` (zwei Spalten) werden durch `raw_file_path` (eine Spalte) ersetzt, Storage-Pfad `{projectId}/interview-import.md` statt zweier getrennter Objekte | Bildet das neue Ein-Datei-Modell 1:1 ab; keine komplexe Datenmigration nötig, da aktuell nur ein einziger Bestandsdatensatz existiert und dessen bereits geparste Section/Eintrag/Feld-Daten von dieser Spaltenänderung nicht berührt werden | 2026-08-28 |
+| 5-MB-Limit gilt für die eine kombinierte Datei (nicht mehr 5 MB je der vorher zwei Dateien) | Konsequente Anpassung an den neuen Ein-Datei-Upload; 5 MB bleibt für Text weiterhin großzügig genug für beide Blöcke zusammen | 2026-08-28 |
+|----------|-----------|------|
 | Vierstufiges Datenmodell (Import → Abschnitt → Eintrag → Feld) statt einer eigenen Tabellenstruktur pro Konzept-Abschnitt | Die elf Konzept-Abschnitte + die Journey-Fragen haben sehr unterschiedliche Formen (einmalig vs. wiederholend, 2–10 Felder je Eintrag) — ein einheitliches, generisches Modell bildet alle ab, ohne dass jeder neue Abschnittstyp eine Schema-Änderung braucht | 2026-08-27 |
 | Parsing als einzelne, reine Server-Funktion, zweimal aufgerufen (einmal für die Vorschau, einmal beim endgültigen Speichern) | Stellt sicher, dass exakt das gespeichert wird, was in der Vorschau zu sehen war — kein geparster Zwischenzustand muss vom Client zurück zum Server transportiert werden, und es gibt nur eine Stelle mit Parsing-Logik | 2026-08-27 |
 | Journey-„Optionen" (A–F) werden als ein Feld mit dem vollständigen Listentext gespeichert, nicht als einzelne Unter-Felder pro Buchstabe | Optionen folgen nicht dem `**Label:** Wert`-Muster der granularen Felder, sondern sind reine Kontextinformation zur Antwort; niemand referenziert später eine einzelne Option isoliert | 2026-08-27 |
@@ -138,6 +143,8 @@
 
 ## Tech Design (Solution Architect)
 
+**Update (`/architecture`, 2026-08-28, nach `/refine` — Ein-Datei-Umstellung):** Abschnitte A und B unten sind gegenüber dem ursprünglichen Tech Design (2026-08-27) aktualisiert. Abschnitte C und D bleiben inhaltlich gültig, siehe die neu ergänzten Punkte am Ende.
+
 ### A) Komponenten-Struktur (visueller Baum)
 
 ```
@@ -146,18 +153,17 @@ Projekt-Detail-Seite (/kunden/[kundeId]/[projektId], ersetzt den PROJ-17-Platzha
 └── Import-Bereich (neuer Inhalt anstelle des "Interview-Import folgt in PROJ-3"-Hinweises)
     │
     ├── Zustand "Kein Import vorhanden"
-    │   ├── Upload-Zone "Journey-Transkript" (Drag & Drop + Dateiauswahl)
-    │   ├── Upload-Zone "Konzept" (Drag & Drop + Dateiauswahl)
-    │   └── "Dateien prüfen"-Button (aktiv erst, wenn beide Dateien gewählt sind)
+    │   ├── EINE Upload-Zone "Interview-Import" (Drag & Drop + Dateiauswahl) — ersetzt die bisherigen zwei Zonen
+    │   └── "Datei prüfen"-Button (aktiv, sobald eine Datei gewählt ist)
     │
     ├── Zustand "Vorschau" (nach Dateiprüfung, vor endgültiger Übernahme)
-    │   ├── Format-Warnung (falls eine Datei eher wie das jeweils andere Dokument aussieht)
-    │   ├── Journey-Vorschau: Liste aller erkannten Fragen mit Antwort, Lücken deutlich markiert
-    │   ├── Konzept-Vorschau: Liste aller erkannten Abschnitte mit ihren Feldern, Lücken markiert
-    │   ├── Re-Import-Warnung (nur falls bereits ein Import mit abhängigen Daten existiert)
+    │   ├── Fehlender-Block-Warnung (falls die Datei nur Journey- ODER nur Konzept-Block enthält, nicht beide — ersetzt die bisherige "falsches Dokument im Slot"-Warnung, die es mit nur einem Slot nicht mehr geben kann)
+    │   ├── Journey-Vorschau: Liste aller erkannten Fragen mit Antwort, Lücken deutlich markiert (unverändert)
+    │   ├── Konzept-Vorschau: Liste aller erkannten Abschnitte mit ihren Feldern, Lücken markiert (unverändert)
+    │   ├── Re-Import-Warnung (nur falls bereits ein Import mit abhängigen Daten existiert, unverändert)
     │   └── "Import übernehmen" / "Abbrechen"
     │
-    └── Zustand "Import vorhanden" (Lese-Übersicht)
+    └── Zustand "Import vorhanden" (Lese-Übersicht, unverändert)
         ├── Journey-Übersicht (aufklappbare Fragen-Liste)
         ├── Konzept-Übersicht (aufklappbare Abschnitte-Liste mit Feldern)
         └── "Erneut importieren"-Button (führt zurück zum Upload-Zustand)
@@ -169,8 +175,8 @@ Vier Ebenen, die zusammen sowohl die Journey-Fragen als auch alle elf Konzept-Ab
 
 **Import** — ein Datensatz pro Projekt (ein Re-Import ersetzt den bestehenden, statt einen zweiten anzulegen):
 - Eindeutige ID, Verknüpfung zum Projekt
-- Verweise auf die beiden Rohdateien im `imports`-Bucket (siehe PROJ-1)
-- Kopf-Metadaten aus den Dateien (Datum, Geführt-mit/Erstellt-mit, Prompt-Version)
+- Verweis auf die **eine** Rohdatei im `imports`-Bucket (siehe PROJ-1) — ersetzt die bisherigen zwei getrennten Verweise
+- Kopf-Metadaten aus beiden enthaltenen Blöcken (Datum, Geführt-mit/Erstellt-mit, Prompt-Version)
 - Importiert-Zeitstempel
 
 **Abschnitt** — ein Eintrag pro erkanntem Bereich einer der beiden Dateien (z. B. "Einstieg", "Phase 1–3", "Strategisches Fundament", "Seitenstruktur"):
@@ -197,12 +203,15 @@ Gespeichert in: Supabase (PostgreSQL), wie alle bisherigen Daten. Sichtbarkeit: 
 - **Parsing als eine einzige Server-Funktion, zweimal aufgerufen:** Die Vorschau und der endgültige Speichervorgang nutzen exakt dieselbe Logik — was der Nutzer in der Vorschau sieht, ist garantiert das, was gespeichert wird, ohne einen fehleranfälligen Zwischentransport der bereits geparsten Daten durchs Frontend.
 - **Markdown-Parser statt Regex:** Da dieses Parsing der Kern des gesamten Features ist und gegen von einer KI erzeugten (nicht immer hundertprozentig identisch formatierten) Text läuft, ist ein echter Markdown-Parser robuster als handgeschriebene Zeilen-Muster.
 - **Erweiterbare „hat abhängige Daten"-Prüfung:** Verhindert, dass PROJ-4 später den gesamten Re-Import-Ablauf neu entwerfen muss — es ergänzt nur seine eigene Bedingung, genau wie bei PROJ-17s Lösch-Schutzprüfung.
-- **5-MB-Limit pro Datei:** Rein zur Missbrauchsvermeidung, da es sich um Textdateien handelt und selbst sehr lange Interviews deutlich darunterbleiben.
+- **5-MB-Limit für die eine kombinierte Datei** (vorher: 5 MB je Datei): Rein zur Missbrauchsvermeidung, da es sich um Textdateien handelt und selbst sehr lange Interviews deutlich darunterbleiben — 5 MB bleibt großzügig genug für beide Blöcke zusammen.
+- **Neu — Aufteilung über die bereits vorhandenen H1-Überschriften, kein neues Trennzeichen:** Die kombinierte Datei wird vor dem eigentlichen Parsen an den beiden bekannten Zeilenanfängen `# Journey-Transkript` und `# Landingpage-Konzept` in zwei Rohtext-Abschnitte zerlegt (Reihenfolge im Dokument egal). Beide Abschnitte gehen danach unverändert an die bestehenden `parseJourney()`/`parseKonzept()`-Funktionen — die eigentliche Parsing-Logik bleibt vollständig unangetastet, nur ein dünner Aufteilungs-Schritt kommt davor. Fehlt eine der beiden Überschriften, wird das als „Block fehlt" erkannt (neue AC) statt als Parsing-Lücke innerhalb eines gefundenen Blocks.
+- **`detectDocumentType`/`checkCrossFormat` (bisherige „falscher Slot"-Erkennung) entfällt ersatzlos:** Mit nur einem Upload-Slot kann eine Datei nicht mehr im falschen Slot landen — das Konzept eines „Slots" gibt es nicht mehr. Die neue „Block fehlt"-Prüfung (siehe oben) übernimmt die verbleibende, tatsächlich noch relevante Aufgabe (fehlender Inhalt erkennen), braucht dafür aber keine Heuristik zur Unterscheidung zweier Dokumenttypen mehr, sondern nur die Prüfung, ob beide bekannten Überschriften gefunden wurden.
+- **Datenmodell-Änderung: `journey_file_path`/`konzept_file_path` (zwei Spalten) → `raw_file_path` (eine Spalte)** in `interview_imports`, Storage-Pfad `{projectId}/interview-import.md` (ein Objekt) statt zwei getrennter Objekte. Migration benennt/ersetzt die Spalten; da aktuell nur ein einziger echter Datensatz existiert ("1. Testkunde", altes Format), ist keine komplexe Datenmigration nötig — der bestehende Datensatz behält seine bereits geparsten `import_sections`/`entries`/`fields` unverändert (die Produktentscheidung „bereits importierte Daten bleiben unangetastet" bezieht sich auf genau diese Tabellen, nicht auf die reine Rohdatei-Referenz), nur ein späterer Re-Import würde die neue Spalte befüllen.
 
 ### D) Abhängigkeiten (Pakete)
 
-- Ein schlankes Markdown-Parsing-Paket (z. B. aus dem `remark`/`unified`-Ökosystem) — neue Abhängigkeit, Begründung siehe oben
-- Sonst keine neuen Pakete nötig: Datei-Upload läuft über die native Browser-Drag&Drop-/File-API (kein zusätzliches UI-Paket), Formulare/Bestätigungsdialoge nutzen die bereits vorhandenen shadcn/ui-Bausteine (`Alert`, `Dialog`/`AlertDialog`, `Accordion` für die aufklappbare Lese-Übersicht — bereits installiert), `@supabase/ssr` für den Storage-Zugriff auf den `imports`-Bucket ist bereits vorhanden
+- Ein schlankes Markdown-Parsing-Paket (z. B. aus dem `remark`/`unified`-Ökosystem) — neue Abhängigkeit, Begründung siehe oben (bereits vorhanden seit der ursprünglichen Umsetzung, keine Änderung)
+- Sonst keine neuen Pakete nötig: Datei-Upload läuft über die native Browser-Drag&Drop-/File-API (kein zusätzliches UI-Paket), Formulare/Bestätigungsdialoge nutzen die bereits vorhandenen shadcn/ui-Bausteine (`Alert`, `Dialog`/`AlertDialog`, `Accordion` für die aufklappbare Lese-Übersicht — bereits installiert), `@supabase/ssr` für den Storage-Zugriff auf den `imports`-Bucket ist bereits vorhanden. Die neue Aufteilungs-Logik ist reine Textsuche, kein neues Paket nötig.
 
 ## QA Test Results
 
