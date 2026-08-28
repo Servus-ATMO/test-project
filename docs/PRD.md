@@ -14,7 +14,7 @@ Agentur-Mitarbeiter (Konzeption/Strategie), die Kunden-Interviews auswerten und 
 | P0 (MVP) | Agentur-Login | Deployed ([PROJ-2](../features/PROJ-2-agentur-login.md)) |
 | P0 (MVP) | Import-Werkstatt (eine kombinierte Interview-Import-Datei vollständig parsen) | Planned ([PROJ-3](../features/PROJ-3-import-werkstatt.md)) |
 | P0 (MVP) | KI-Anreicherung (Ebene 2 Profildimensionen, Kanten, Konflikterkennung, Impact-Texte) | Deployed ([PROJ-4](../features/PROJ-4-ki-anreicherung.md)) |
-| P0 (MVP) | DAG/Sankey-Graph-Visualisierung (4 Ebenen, Dossier-Panel) | Planned ([PROJ-5](../features/PROJ-5-dag-sankey-visualisierung.md)) |
+| P0 (MVP) | DAG/Sankey-Graph-Visualisierung (4 Ebenen, Dossier-Panel) | Deployed ([PROJ-5](../features/PROJ-5-dag-sankey-visualisierung.md)) |
 | P0 (MVP) | Branch-Datenmodell (Antworten ändern, Original/Branch-Vergleich) | Planned |
 | P0 (MVP) | Konflikterkennung & -auflösung (Katalog-Varianten + strukturelle Eingriffe) | Planned |
 | P0 (MVP) | Wireframe-Engine (nativer Baustein-Katalog, generiert aus Ebene 3, Drag&Drop, Varianten) | Planned |

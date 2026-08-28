@@ -1,10 +1,10 @@
 # PROJ-5: DAG/Sankey-Graph-Visualisierung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-29 (Refine)
+**Last Updated:** 2026-08-29 (Deploy)
 
-**Hinweis:** Die live deployte Version (siehe Deployment-Abschnitt) enthält noch nicht das Graph-UI-Batch (per-Spalten-Sichtbarkeit, Persona-Filter, Ebene-2-Dimensionsgruppierung, statische Spalten statt React-Flow-Canvas) — implementiert und durch `/qa` bestätigt (15/15 AC PASS, 0 neue Bugs, 1 unveränderter Low-Bug BUG-9, Production Ready: YES), aber noch nicht deployed. Nächster Schritt: `/deploy PROJ-5`.
+**Hinweis:** Das Graph-UI-Batch (per-Spalten-Sichtbarkeit, Persona-Filter, Ebene-2-Dimensionsgruppierung, statische Spalten statt React-Flow-Canvas) ist jetzt live, siehe „Deployment 2" im Deployment-Abschnitt.
 
 ## Implementierungsnotizen
 - **Feinschliff Breiten-Layout, zwei Runden (`/frontend`, 2026-08-29):** Der vorherige "full bleed"-Fix (siehe unten) machte den gesamten Bereich unter dem Persona-Filter volle Breite — der Nutzer wollte stattdessen: „graph-canvas" (die umschliessende Box) ist immer volle Browserbreite, aber die Spalten-Zeile DARIN bleibt am Titel ausgerichtet (linksbündig), solange ihr tatsächlicher Inhalt in die Standardbreite der Seite passt — erst wenn er breiter wird (z. B. durch eine künftige 4./5. Ebene), soll sie sich stattdessen im vollen Fenster zentrieren. Das ist eine inhaltsabhängige Fallunterscheidung, die reines CSS nicht abbilden kann (`justify-content:center` würde auch kleinen Inhalt immer mittig im vollen Fenster zeigen, nicht linksbündig zum Titel) — deshalb per JS gemessen: neues `src/lib/graph/content-alignment.ts` (`computeContentMarginLeft()`, reine, getestete Funktion) berechnet aus der tatsächlich gemessenen Inhaltsbreite (`ResizeObserver` auf der Spalten-Zeile, dieselbe Infrastruktur wie für die Kanten-Neuberechnung) und der Fensterbreite den nötigen `marginLeft` — Titel-Position wird dabei nicht per DOM-Query aus der Elternkomponente gelesen (fragil), sondern aus den bekannten Layout-Konstanten des umgebenden `(protected)/layout.tsx` (`max-w-5xl`, `px-4`) neu hergeleitet, mit Kommentar-Verweis auf die Kopplung. Spalten-Zeile bekam `w-fit` (schrumpft auf tatsächlichen Inhalt statt auf Elternbreite zu strecken), sonst wäre die gemessene Breite immer gleich der (jetzt vollen) graph-canvas-Breite gewesen.
@@ -331,3 +331,14 @@ Alle 15 Acceptance Criteria manuell im Browser durchgespielt und zusätzlich in 
 Zusammen mit PROJ-3s Ein-Datei-Umstellung deployt (gemeinsamer Push nach `main`, kein separates Staging, siehe PROJ-1 — Nutzer hat den kombinierten Deploy-Umfang bewusst bestätigt). Commit `25d3131`, Vercel-Build `dpl_EXaPWSYhJFS3pd3zo9oJbJQY9mCo` erfolgreich (Status Ready, 38s Build-Dauer), Production-Alias `test-project-woad-theta.vercel.app` zeigt auf den neuen Build. Keine DB-Migration für PROJ-5 selbst nötig (rein lesende Ansicht auf bereits bestehende PROJ-3/PROJ-4-Tabellen). Neues npm-Paket `@xyflow/react` bereits über `package.json`/`package-lock.json` im Repo, kein zusätzlicher Vercel-Setup-Schritt. Keine neuen Umgebungsvariablen.
 
 Live verifiziert nach Deploy: `/kunden/[kundeId]/[projektId]/graph` leitet unauthentifiziert korrekt mit 307 zu `/login?redirect=...` weiter, Security-Header aktiv, Production-Alias bestätigt korrekt auf den neuen Build zeigend. Kein Test-Kunde in Produktion angelegt — die volle Funktionalität (Highlight/Trace, Edge-Rollup, Dossier-Panel, Persona-Filter-Grundlage) wurde bereits in `/qa` ausführlich gegen genau diese Supabase-Instanz verifiziert (30/30 + 4/4 Mobile-Safari-Regression, siehe QA Test Results).
+
+### Deployment 2 (Graph-UI-Batch, 2026-08-29)
+
+**Deployed:** 2026-08-29
+**Production URL:** https://test-project-woad-theta.vercel.app
+**Commit:** `34bb75f` (bündelt 9 Commits seit dem ersten Deploy: Graph-UI-Batch, Rendering-Umbau React Flow → statische Spalten + SVG, Layout-Fixes, QA-Runde 2, Refine)
+**Vercel-Build:** `dpl_2qiHond2EWgUUaKgVmJmnaTmRn3w` (Status Ready, ~27s Build-Dauer)
+
+Löst das grundlegende Rendering (React Flow → statische Spalten + SVG-Kanten-Overlay) sowie das Graph-UI-Batch (per-Spalten-Sichtbarkeit, globaler Persona-Filter, Ebene-2-Dimensionsgruppierung) aus dem vorherigen Deployment-Stand ab — siehe Implementierungsnotizen und `/qa`-Runde 2 für den vollständigen Verlauf. `npm run lint` und `npm run build` lokal vor dem Push sauber. `@xyflow/react` vollständig aus `package.json`/`package-lock.json` entfernt, kein Ersatzpaket nötig (eigenes SVG-Overlay). Keine DB-Migration, keine neuen Umgebungsvariablen.
+
+Live verifiziert nach Deploy: Production-Alias (`test-project-woad-theta.vercel.app`, `test-project-atmodesign.vercel.app`, `test-project-git-main-atmodesign.vercel.app`) zeigt bestätigt auf den neuen Build; `/login` (200) und `/kunden` unauthentifiziert (307 → `/login`) korrekt. Kein Test-Kunde in Produktion angelegt — volle Funktionalität inkl. aller neuen Graph-UI-Batch-Fähigkeiten bereits in der `/qa`-Runde 2 gegen dieselbe Supabase-Instanz verifiziert (76/76 Playwright, 119/119 Vitest).
