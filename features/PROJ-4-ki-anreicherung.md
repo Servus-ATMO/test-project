@@ -2,9 +2,10 @@
 
 ## Status: Deployed
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-28 (Deploy)
+**Last Updated:** 2026-08-28 (Bugfix)
 
 ## Implementierungsnotizen
+- **BUG-4 (UX-Feedback, 2026-08-28):** Nutzer musste die Chat-Antwort der Anreicherung bisher manuell aus dem Chat-Verlauf in eine `.md`-Datei kopieren, bevor sie wieder hochgeladen werden konnte. Fix: `prompt-template.ts` weist die KI jetzt im Prompt selbst an, das Ergebnis als herunterladbare Markdown-Datei (Artifact, falls von der Chat-Oberfläche unterstützt) statt nur als Chat-Text auszugeben. Reiner Prompt-Text-Zusatz, keine Änderung an Datenmodell/Parsing. Unit-Test ergänzt (`prompt-template.test.ts`).
 - **Datenmodell live umgesetzt:** fünf neue Tabellen (`enrichments`, `enrichment_personas`, `enrichment_dimensions`, `enrichment_edges`, `enrichment_conflicts`), Migrationen `create_enrichment_tables` + `save_enrichment_atomic` + `grant_enrichment_tables_service_role`. Gleiches Shared-Visibility-Muster wie PROJ-3 (RLS `true` für `authenticated`, kein Zugriff für `anon`, explizit gegen die DB verifiziert: `has_table_privilege('anon', 'enrichments', 'SELECT')` → `false`). `enrichment_dimensions.dimension_name` per CHECK-Constraint auf die 23 festen Namen begrenzt; `enrichment_edges`/`enrichment_conflicts` erzwingen per CHECK, dass genau die zum jeweiligen Typ (`informs`/`shapes`, `explicit`/`emergent`) passenden Quell-/Zielspalten gesetzt sind.
 - **Atomarer Speichervorgang von Anfang an:** `save_enrichment()` (Postgres-Funktion, `SECURITY INVOKER` bestätigt — `prosecdef: false`) bündelt Upsert von `enrichments` + kompletten Ersatz von Personas/Dimensionen/Kanten/Konflikten in einer einzigen Transaktion. Bewusst direkt so gebaut statt wie in PROJ-3 erst nachträglich per Bugfix (BUG-1 dort) — gleiche Lektion von Anfang an angewendet.
 - **Bug während der eigenen Verifikation gefunden und behoben:** Die erste Migration vergab GRANTs nur für `authenticated`, nicht für `service_role` (PROJ-3s Tabellen hatten das implizit aus der ursprünglichen Projekt-Vorlage). Beim Playwright-Verifikationslauf schlug die direkte DB-Prüfung mit `permission denied for table enrichments` fehl — behoben per Nachtrags-Migration `grant_enrichment_tables_service_role`.

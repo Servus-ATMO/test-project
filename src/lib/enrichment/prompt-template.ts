@@ -124,7 +124,7 @@ Schlage KEINE Lösung vor — nur erkennen und beschreiben.
 
 ## Ausgabeformat
 
-Antworte AUSSCHLIESSLICH mit einem Markdown-Dokument in exakt diesem Format (Platzhalter in eckigen Klammern ersetzen, Struktur/Überschriften unverändert lassen):
+Gib deine Antwort als herunterladbare Markdown-Datei aus (z. B. als Artifact, falls deine Chat-Oberfläche das unterstützt), nicht nur als Text im Chat-Verlauf — die Datei wird anschließend direkt wieder in dieses Tool hochgeladen. Antworte AUSSCHLIESSLICH mit einem Markdown-Dokument in exakt diesem Format (Platzhalter in eckigen Klammern ersetzen, Struktur/Überschriften unverändert lassen):
 
 \`\`\`markdown
 ${OUTPUT_FORMAT}

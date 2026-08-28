@@ -71,6 +71,15 @@ describe('buildEnrichmentPrompt', () => {
     expect(prompt).not.toContain('(irrelevant)')
   })
 
+  // Nutzer-Feedback (2026-08-28): das Ergebnis musste bisher manuell aus dem
+  // Chat-Text in eine .md-Datei kopiert werden, bevor es wieder hochgeladen
+  // werden konnte. Die KI wird jetzt explizit angewiesen, eine herunterladbare
+  // Datei/ein Artifact auszugeben statt nur Chat-Text.
+  it('instructs the AI to output a downloadable file instead of plain chat text', () => {
+    const prompt = buildEnrichmentPrompt('Testprojekt', buildFixtureImport())
+    expect(prompt).toContain('herunterladbare Markdown-Datei')
+  })
+
   it('falls back to a clear placeholder when Abschnitt 4 "Seitenstruktur" is missing from the import', () => {
     const withoutSeitenstruktur = buildFixtureImport()
     withoutSeitenstruktur.konzept.sections = withoutSeitenstruktur.konzept.sections.filter(
