@@ -1,11 +1,7 @@
-import { makeId, buildFields, extractLabeledFields, splitByHeadingLevel } from './parse-utils'
+import { makeId, buildFields, buildFrageFields, extractLabeledFields, splitByHeadingLevel } from './parse-utils'
 import { normalizeMarkdown } from './normalize-markdown'
 import type { ImportEntry, ImportSection, JourneyMeta, ParsedDocument } from './types'
 
-// Nur "Gestellt" und "Antwort" gelten als zwingend erwartet - "Optionen"
-// fehlt in Phase 10 (Konzeptionelle Synthese) laut Vorlage bewusst, ein
-// Fehlen dort waere also keine echte Luecke (siehe PROJ-3 Tech Design).
-const FRAGE_EXPECTED = ['Gestellt', 'Antwort']
 const EINSTIEG_EXPECTED = ['Frage', 'Antwort']
 const NOTIZEN_EXPECTED = [
   'Beobachtungen zur adaptiven Logik',
@@ -57,7 +53,7 @@ export function parseJourney(rawText: string): ParsedDocument & { meta: JourneyM
     const entries: ImportEntry[] = fragen.map(({ title: fragTitle, body: fragBody }) => ({
       id: makeId(),
       label: fragTitle,
-      fields: buildFields(fragBody, FRAGE_EXPECTED),
+      fields: buildFrageFields(fragBody),
     }))
     sections.push({ id: makeId(), document: 'journey', name: title, entries })
   }

@@ -11,6 +11,10 @@ const PASSWORD = 'QaPasswort123!'
 
 const JOURNEY_VALID = readFileSync(path.join(__dirname, 'fixtures/proj3-journey-valid.md'), 'utf-8')
 const KONZEPT_VALID = readFileSync(path.join(__dirname, 'fixtures/proj3-konzept-valid.md'), 'utf-8')
+const JOURNEY_REAL_FORMAT = readFileSync(
+  path.join(__dirname, 'fixtures/proj3-journey-real-format.md'),
+  'utf-8'
+)
 
 function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -340,4 +344,53 @@ test('PROJ-3: 5-MB-Dateigrößenlimit wird durchgesetzt', async ({ page }) => {
     buffer: big,
   })
   await expect(page.getByText('Die Datei ist größer als 5 MB.')).toBeVisible()
+})
+
+test('PROJ-3: Journey-Fragen im realen Prompt-Output-Format werden korrekt geparst (Regression BUG-3)', async ({
+  page,
+}) => {
+  // Bug-Report vom Nutzer anhand echter Kundendaten (2026-08-28): der externe
+  // Interview-Prompt gibt Fragen tatsaechlich als Freitext-Absatz ohne
+  // "**Gestellt:**"-Label aus, Optionen als rohe "A) ..."-Zeilen, und die
+  // Antwort unter "**Gewählte Antwort:**" statt "**Antwort:**" - der alte
+  // Parser markierte dadurch Gestellt/Antwort faelschlich als Luecke, obwohl
+  // die Datei inhaltlich vollstaendig war. Siehe PROJ-3-Spec, "BUG-3".
+  await page.goto('/login', { waitUntil: 'networkidle' })
+  await page.fill('input[name="email"]', EMAIL)
+  await page.fill('input[name="password"]', PASSWORD)
+  await page.click('button[type="submit"]')
+  await expect(page).toHaveURL('/dashboard')
+
+  await page.goto(`/kunden/${clientId}/${projectId}`, { waitUntil: 'networkidle' })
+  const reimportButton = page.getByRole('button', { name: 'Erneut importieren' })
+  if (await reimportButton.isVisible()) await reimportButton.click()
+
+  await page.setInputFiles('input[type="file"] >> nth=0', {
+    name: 'journey-transkript.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(JOURNEY_REAL_FORMAT),
+  })
+  await page.setInputFiles('input[type="file"] >> nth=1', {
+    name: 'konzept.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(KONZEPT_VALID),
+  })
+  await page.getByRole('button', { name: 'Dateien prüfen' }).click()
+  await expect(page.getByText('Vorschau')).toBeVisible()
+
+  await page.getByRole('button', { name: /Phase 1–3/ }).click()
+
+  // Jeder Frage-Eintrag ist ein eigener ".border-l-2"-Container (siehe
+  // parsed-document-view.tsx) - darauf skopiert statt auf einzelne
+  // dt/dd-Zeilen, da "Gestellt:"/"Antwort:" bei mehreren Fragen vorkommen.
+  const frage1 = page.locator('div.border-l-2', { has: page.getByText('Frage 1', { exact: true }) })
+  await expect(frage1).toContainText('Wer soll über die Landingpage in erster Linie erreicht werden?')
+  await expect(frage1).toContainText('A) Privatkunden')
+  await expect(frage1).toContainText('Privatkunden und Wiederverkäufer gleichermaßen')
+  await expect(frage1).not.toContainText('Lücke — nicht angegeben')
+  await expect(frage1).not.toContainText('Gewählte Antwort')
+
+  // Frage 3 blieb bewusst unbeantwortet -> muss weiterhin als echte Luecke erkannt werden.
+  const frage3 = page.locator('div.border-l-2', { has: page.getByText('Frage 3', { exact: true }) })
+  await expect(frage3).toContainText('Lücke — nicht angegeben')
 })

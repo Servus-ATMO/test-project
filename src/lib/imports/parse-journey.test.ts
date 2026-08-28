@@ -138,3 +138,69 @@ describe('parseJourney', () => {
     )
   })
 })
+
+// Der tatsaechliche Output des externen Interview-Prompts weicht von der
+// "**Gestellt:**"-Vorlage ab (siehe Bug-Report auf der Import-Seite,
+// 2026-08-28): die Frage steht als reiner Freitext-Absatz direkt nach der
+// Ueberschrift, die Optionen als rohe "A) ..."-Zeilen, und die Antwort unter
+// "**Gewählte Antwort:**" statt "**Antwort:**".
+const REAL_WORLD_SAMPLE = `# Journey-Transkript: Digitales Sammelkartenspiel
+
+**Datum:** 2026-08-20
+**Geführt mit:** Adaptiver Landingpage-Konzeptions-Prompt
+**Prompt-Version:** v2
+
+---
+
+## Einstieg
+
+**Frage:**
+Beschreib dein Produkt kurz.
+
+**Antwort:**
+Ein digitales Sammelkartenspiel für die Fußball-Nebensaison.
+
+---
+
+## Phase 1–3: Ziel, Kontext & Herkunft
+
+### Frage 1
+Was soll ein Besucher der Landingpage am Ende konkret tun?
+
+A) Er soll sich für den Launch vormerken lassen.
+B) Er soll direkt eine Beta-Version spielen.
+C) Er soll einer Community beitreten.
+
+**Gewählte Antwort:** A, C (Mehrfachauswahl) — vormerken lassen und Community beitreten.
+`
+
+describe('parseJourney - realer Prompt-Output ohne "Gestellt"-Label', () => {
+  it('extracts the plain-text question paragraph as Gestellt', () => {
+    const result = parseJourney(REAL_WORLD_SAMPLE)
+    const phase1 = result.sections.find((s) => s.name.startsWith('Phase 1–3'))
+    const gestellt = phase1?.entries[0].fields.find((f) => f.name === 'Gestellt')
+    expect(gestellt).toMatchObject({
+      status: 'found',
+      value: 'Was soll ein Besucher der Landingpage am Ende konkret tun?',
+    })
+  })
+
+  it('extracts the A)-F) option lines as Optionen', () => {
+    const result = parseJourney(REAL_WORLD_SAMPLE)
+    const phase1 = result.sections.find((s) => s.name.startsWith('Phase 1–3'))
+    const optionen = phase1?.entries[0].fields.find((f) => f.name === 'Optionen')
+    expect(optionen?.value).toBe(
+      'A) Er soll sich für den Launch vormerken lassen.\nB) Er soll direkt eine Beta-Version spielen.\nC) Er soll einer Community beitreten.'
+    )
+  })
+
+  it('treats "Gewählte Antwort" as the Antwort field, without a separate duplicate field', () => {
+    const result = parseJourney(REAL_WORLD_SAMPLE)
+    const phase1 = result.sections.find((s) => s.name.startsWith('Phase 1–3'))
+    const fields = phase1?.entries[0].fields ?? []
+    const antwort = fields.find((f) => f.name === 'Antwort')
+    expect(antwort).toMatchObject({ status: 'found' })
+    expect(antwort?.value).toContain('A, C (Mehrfachauswahl)')
+    expect(fields.find((f) => f.name === 'Gewählte Antwort')).toBeUndefined()
+  })
+})

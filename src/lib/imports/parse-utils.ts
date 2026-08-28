@@ -99,6 +99,70 @@ function toField(name: string, rawValue: string): ImportField {
   return { id: makeId(), name, value: placeholder ? '' : rawValue.trim(), status }
 }
 
+const OPTION_LINE = /^[A-F]\)\s+.+$/
+const LABEL_PATTERNS = [NUMBERED_BOLD_COLON, BULLET_BOLD_COLON, BOLD_COLON, ITALIC_COLON, BOLD_ONLY]
+
+// Der tatsaechliche Output des externen Interview-Prompts (siehe
+// docs/reference/Adaptiver-Landingpage-Konzeptions-Prompt-v2.md) weicht von
+// der "**Gestellt:**"-Vorlage ab: die Frage steht als reiner Freitext-Absatz
+// direkt nach der "### Frage N"-Ueberschrift, gefolgt von den A)-F)-Optionen
+// als eigene Zeilen und "**Gewählte Antwort:**" statt "**Antwort:**". Diese
+// beiden Helfer holen die Frage bzw. Optionen aus diesem Freitext-Format,
+// wenn kein explizites Label dafuer vorhanden ist (siehe buildFrageFields).
+function extractPlainQuestionText(block: string): string {
+  const collected: string[] = []
+  for (const line of block.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed === '---') {
+      if (collected.length > 0) break
+      continue
+    }
+    if (/^#{1,6}\s/.test(trimmed)) break
+    if (OPTION_LINE.test(trimmed)) break
+    if (LABEL_PATTERNS.some((pattern) => pattern.test(trimmed))) break
+    collected.push(trimmed)
+  }
+  return collected.join(' ').trim()
+}
+
+function extractPlainOptionLines(block: string): string {
+  return block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => OPTION_LINE.test(line))
+    .join('\n')
+}
+
+// Baut die Felder eines Journey-"### Frage N"-Eintrags. Anders als
+// buildFields() unterscheidet dies bewusst zwischen "Label fehlt komplett"
+// (Freitext-Fallback greift, siehe oben) und "Label vorhanden, aber
+// Platzhalter" (bleibt eine sichtbare Luecke wie bisher) - und akzeptiert
+// "Gewählte Antwort" als gleichwertigen Namen fuer "Antwort".
+export function buildFrageFields(block: string): ImportField[] {
+  const found = extractLabeledFields(block)
+  const fields: ImportField[] = []
+  const used = new Set(['Gestellt', 'Optionen', 'Antwort', 'Gewählte Antwort'])
+
+  const gestellt = found.has('Gestellt') ? (found.get('Gestellt') ?? '') : extractPlainQuestionText(block)
+  fields.push(toField('Gestellt', gestellt))
+
+  if (found.has('Optionen')) {
+    fields.push(toField('Optionen', found.get('Optionen') ?? ''))
+  } else {
+    const optionen = extractPlainOptionLines(block)
+    if (optionen) fields.push(toField('Optionen', optionen))
+  }
+
+  const antwort = found.has('Antwort') ? (found.get('Antwort') ?? '') : (found.get('Gewählte Antwort') ?? '')
+  fields.push(toField('Antwort', antwort))
+
+  for (const [label, value] of found) {
+    if (used.has(label)) continue
+    fields.push(toField(label, value))
+  }
+  return fields
+}
+
 export interface HeadingBlock {
   title: string
   body: string

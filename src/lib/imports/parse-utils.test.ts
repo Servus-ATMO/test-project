@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildFields, extractLabeledFields, isPlaceholder, splitByHeadingLevel } from './parse-utils'
+import { buildFields, buildFrageFields, extractLabeledFields, isPlaceholder, splitByHeadingLevel } from './parse-utils'
 
 describe('isPlaceholder', () => {
   it('treats empty, ellipsis and bracketed text as placeholders', () => {
@@ -74,6 +74,60 @@ describe('buildFields', () => {
   it('treats a placeholder value as a gap even when the label is present', () => {
     const fields = buildFields('**Zielgruppe:** …', ['Zielgruppe'])
     expect(fields[0]).toMatchObject({ status: 'gap', value: '' })
+  })
+})
+
+describe('buildFrageFields', () => {
+  it('parses the Vorlage-labeled format as before (Gestellt/Optionen/Antwort)', () => {
+    const block = [
+      '**Gestellt:** Was ist dein Ziel?',
+      '**Optionen:**',
+      '- A: Leads sammeln',
+      '- B: Verkaufen',
+      '**Antwort:** A',
+    ].join('\n')
+    const fields = buildFrageFields(block)
+    const byName = Object.fromEntries(fields.map((f) => [f.name, f]))
+    expect(byName['Gestellt']).toMatchObject({ status: 'found', value: 'Was ist dein Ziel?' })
+    expect(byName['Optionen']).toMatchObject({ status: 'found' })
+    expect(byName['Antwort']).toMatchObject({ status: 'found', value: 'A' })
+  })
+
+  // Der tatsaechliche Output des externen Interview-Prompts (siehe
+  // docs/reference/Adaptiver-Landingpage-Konzeptions-Prompt-v2.md, Zeilen
+  // 192-197): Frage als Freitext-Absatz ohne Label, Optionen als "A) ..."-
+  // Zeilen, Antwort unter "**Gewählte Antwort:**" - Bug-Report PROJ-3.
+  it('recovers Gestellt/Optionen/Antwort from the real prompt-output format', () => {
+    const block = [
+      'Welche strategische Richtung passt am besten zu eurem Vorhaben?',
+      '',
+      'A) Klarster Hauptweg, der sich aus dem bisherigen Profil ergibt',
+      'B) Gegenläufige strategische Richtung',
+      'C) Hybride Ausrichtung, die zwei Richtungen verbindet',
+      '',
+      '**Gewählte Antwort:** C — Hybride Ausrichtung passt am besten.',
+    ].join('\n')
+    const fields = buildFrageFields(block)
+    const byName = Object.fromEntries(fields.map((f) => [f.name, f]))
+    expect(byName['Gestellt']).toMatchObject({
+      status: 'found',
+      value: 'Welche strategische Richtung passt am besten zu eurem Vorhaben?',
+    })
+    expect(byName['Optionen']?.status).toBe('found')
+    expect(byName['Optionen']?.value).toContain('A) Klarster Hauptweg')
+    expect(byName['Antwort']).toMatchObject({
+      status: 'found',
+      value: 'C — Hybride Ausrichtung passt am besten.',
+    })
+    expect(byName['Gewählte Antwort']).toBeUndefined()
+  })
+
+  it('still marks a fully unanswered question as gaps, not crashes', () => {
+    const fields = buildFrageFields('')
+    const byName = Object.fromEntries(fields.map((f) => [f.name, f]))
+    expect(byName['Gestellt']).toMatchObject({ status: 'gap', value: '' })
+    expect(byName['Antwort']).toMatchObject({ status: 'gap', value: '' })
+    expect(byName['Optionen']).toBeUndefined()
   })
 })
 
