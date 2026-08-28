@@ -1,6 +1,6 @@
 'use client'
 
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { forwardRef } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -8,38 +8,52 @@ import type { GraphNodeData } from '@/lib/graph/types'
 
 export type HighlightState = 'selected' | 'active' | 'dim' | 'none'
 
-export interface GraphFlowNodeData extends Record<string, unknown> {
+interface GraphNodeProps {
   node: GraphNodeData
   expanded?: boolean
   highlight?: HighlightState
+  onClick: () => void
 }
 
 // Ein gemeinsamer Knoten-Renderer fuer alle vier Knotentypen (Themenblock,
 // Frage, Dimension, Content-Block) - der eigentliche Inhalt unterscheidet
-// sich je Typ, aber Rahmen/Badges/Handles folgen demselben Muster.
-export function GraphNode({ data }: NodeProps & { data: GraphFlowNodeData }) {
-  const { node, highlight = 'none' } = data
-
+// sich je Typ, aber Rahmen/Badges folgen demselben Muster. Bewusst ein
+// einfacher Div-Knoten in normalem Dokumentfluss (kein React-Flow-Node
+// mehr, siehe Implementierungsnotizen PROJ-5 2026-08-28: die Spalten sind
+// jetzt statische, vertikal gestapelte Listen nach dem Referenz-Sketch,
+// keine pan-/zoombare Canvas) - `ref` wird von GraphView genutzt, um die
+// tatsaechliche Position fuer die SVG-Kanten-Overlay zu messen.
+export const GraphNode = forwardRef<HTMLDivElement, GraphNodeProps>(function GraphNode(
+  { node, expanded, highlight = 'none', onClick },
+  ref
+) {
   const hasGapBadge =
     (node.type === 'frage' && (node.frageStatus === 'gap' || node.antwortStatus === 'gap')) ||
     (node.type === 'dimension' && node.status === 'gap')
 
   return (
     <div
+      ref={ref}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       className={cn(
-        'w-56 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm transition-opacity',
+        'w-full cursor-pointer rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm outline-none transition-opacity',
         node.type !== 'themenblock' && node.hasConflict && 'border-destructive',
         highlight === 'selected' && 'border-orange-500 ring-2 ring-orange-500',
         highlight === 'active' && 'border-orange-400',
         highlight === 'dim' && 'opacity-30'
       )}
     >
-      {node.type !== 'themenblock' && <Handle type="target" position={Position.Left} />}
-      {node.type !== 'contentblock' && <Handle type="source" position={Position.Right} />}
-
       {node.type === 'themenblock' && (
         <div className="flex items-center gap-1 text-sm font-medium">
-          {data.expanded ? (
+          {expanded ? (
             <ChevronDown className="h-4 w-4 shrink-0" />
           ) : (
             <ChevronRight className="h-4 w-4 shrink-0" />
@@ -91,37 +105,43 @@ export function GraphNode({ data }: NodeProps & { data: GraphFlowNodeData }) {
       )}
     </div>
   )
-}
+})
 
-export interface DimensionGroupFlowNodeData extends Record<string, unknown> {
+export interface DimensionGroupNodeProps {
   dimensionName: string
   count: number
   expanded: boolean
   highlight?: HighlightState
+  onClick: () => void
 }
 
 // Sammel-Knoten fuer wiederkehrende Ebene-2-Dimensionen (dieselbe
 // Dimension, mehrere Personas) - Nutzer-Feedback 2026-08-28: "Ebene-2
 // wiederkehrende Elemente kompakter machen, kollabierbar wie Ebene 1".
-// Bewusst als eigener React-Flow-Knotentyp statt eines fuenften
-// GraphNodeData-Mitglieds - der Gruppen-Knoten ist eine reine UI-
-// Zusammenfassung existierender DimensionNode-Instanzen, kein eigenes
-// Domain-Konzept (anders als Themenblock, der einen echten Abschnitt aus
-// den Importdaten abbildet). Klick auf einen Gruppen-Knoten klappt nur
-// auf/zu, oeffnet nie das Dossier (analog zu Themenblock).
-export function DimensionGroupNode({ data }: NodeProps & { data: DimensionGroupFlowNodeData }) {
-  const { dimensionName, count, expanded, highlight = 'none' } = data
-
+// Klick auf einen Gruppen-Knoten klappt nur auf/zu, oeffnet nie das
+// Dossier (analog zu Themenblock).
+export const DimensionGroupNode = forwardRef<HTMLDivElement, DimensionGroupNodeProps>(function DimensionGroupNode(
+  { dimensionName, count, expanded, highlight = 'none', onClick },
+  ref
+) {
   return (
     <div
+      ref={ref}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       className={cn(
-        'w-56 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm transition-opacity',
+        'w-full cursor-pointer rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm outline-none transition-opacity',
         highlight === 'active' && 'border-orange-400',
         highlight === 'dim' && 'opacity-30'
       )}
     >
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
       <div className="flex items-center gap-1 text-sm font-medium">
         {expanded ? (
           <ChevronDown className="h-4 w-4 shrink-0" />
@@ -133,4 +153,4 @@ export function DimensionGroupNode({ data }: NodeProps & { data: DimensionGroupF
       </div>
     </div>
   )
-}
+})

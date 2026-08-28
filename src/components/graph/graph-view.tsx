@@ -1,17 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { ReactFlow, Background, Controls, useReactFlow, type Edge, type Node } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import { useLayoutEffect, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { buildGraphModel } from '@/lib/graph/build-graph-model'
 import { computeHighlight, computeHighlightForPersona, type HighlightResult } from '@/lib/graph/highlight'
 import { buildEffectiveEdges } from '@/lib/graph/effective-edges'
-import { GraphNode, DimensionGroupNode, type GraphFlowNodeData, type DimensionGroupFlowNodeData, type HighlightState } from './graph-node'
+import { GraphNode, DimensionGroupNode, type HighlightState } from './graph-node'
 import { DossierPanel } from './dossier-panel'
-import type { DimensionNode, DossierNodeData } from '@/lib/graph/types'
+import type {
+  ContentBlockNode,
+  DimensionNode,
+  DossierNodeData,
+  FrageNode,
+  ThemenblockNode,
+} from '@/lib/graph/types'
 import type { ParsedImport } from '@/lib/imports/types'
 import type { Enrichment } from '@/lib/enrichment/types'
 
@@ -20,43 +24,140 @@ interface GraphViewProps {
   enrichment: Enrichment
 }
 
-const NODE_TYPES = {
-  themenblock: GraphNode,
-  frage: GraphNode,
-  dimension: GraphNode,
-  contentblock: GraphNode,
-  dimensiongroup: DimensionGroupNode,
-}
-
-const COLUMN_WIDTH = 420
-const ROW_HEIGHT = 90
-const CHILD_INDENT_X = 32
-// Akzentfarbe fuer aktive Kanten, entspricht der Orange-Markierung im
-// Referenz-Sketch (siehe PROJ-5-Implementierungsnotizen, Nutzer-Feedback
-// 2026-08-28) - Tailwind orange-500.
+// Statische, vertikal gestapelte Spalten statt einer pan-/zoombaren Canvas
+// (Nutzer-Feedback 2026-08-28, nach Referenz-Sketch: "keine Canvas in der
+// ich hin und herscrollen kann - das ist nicht notwendig"). Kanten werden
+// als SVG-Overlay ueber die drei Spalten gezeichnet, deren Pfade aus den
+// tatsaechlichen DOM-Positionen der Knoten berechnet werden (analog zur
+// drawEdges()-Funktion im Referenz-Sketch) - keine manuelle x/y-Vergabe
+// mehr noetig, jede Spalte ist einfach eine normale, vertikale Flex-Liste.
+const NEUTRAL_EDGE_COLOR = '#cbd5e1'
 const ACTIVE_EDGE_COLOR = '#f97316'
 
-type FlowNode = Node<GraphFlowNodeData> | Node<DimensionGroupFlowNodeData>
+type EdgePath = { id: string; d: string; active: boolean }
 
 function dimensionGroupId(dimensionName: string): string {
   return `dimgroup:${dimensionName}`
 }
 
-// React Flows "fitView"-Prop passt die Ansicht nur beim allerersten Mount
-// an, nicht wenn danach mehr Knoten dazukommen (Themenblock/Dimensionsgruppe
-// aufgeklappt, Spalte eingeblendet). Ohne Nachfuehren koennen neu
-// hinzukommende Knoten ausserhalb des sichtbaren, gezoomten Bereichs landen
-// und sind dann nicht mehr anklickbar (eigene Verifikation, 2026-08-28:
-// Content-Block auf schmalem Viewport nach mehrfachem Aufklappen nicht mehr
-// erreichbar). Fittet erneut, sobald sich die MENGE der sichtbaren Knoten
-// aendert - bewusst nicht bei jeder Highlight-Aenderung (reines Anklicken
-// zum Hervorheben soll die Ansicht nicht wegspringen lassen).
-function AutoFitView({ nodeIdsKey }: { nodeIdsKey: string }) {
-  const { fitView } = useReactFlow()
-  useEffect(() => {
-    fitView({ duration: 200 })
-  }, [nodeIdsKey, fitView])
-  return null
+// Reine Daten, kein JSX/keine Closures - wird in einem useMemo gebaut. Der
+// React Compiler kann ein useMemo nicht optimieren, wenn sein Rueckgabewert
+// JSX mit ref-Zuweisungen enthaelt (siehe ColumnRowItem weiter unten, das
+// die eigentliche ref-Zuweisung uebernimmt) - deshalb strikte Trennung.
+type ColumnRow =
+  | { kind: 'themenblock'; id: string; indent: false; node: ThemenblockNode; expanded: boolean; highlight: HighlightState }
+  | { kind: 'frage'; id: string; indent: boolean; node: FrageNode; highlight: HighlightState }
+  | { kind: 'dimension'; id: string; indent: boolean; node: DimensionNode; highlight: HighlightState }
+  | {
+      kind: 'dimensiongroup'
+      id: string
+      indent: false
+      dimensionName: string
+      count: number
+      expanded: boolean
+      highlight: HighlightState
+    }
+  | { kind: 'contentblock'; id: string; indent: false; node: ContentBlockNode; highlight: HighlightState }
+
+function ColumnHeader({
+  eyebrow,
+  title,
+  switchId,
+  ariaLabel,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  eyebrow: string
+  title: string
+  switchId: string
+  ariaLabel: string
+  checked: boolean
+  disabled: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{eyebrow}</div>
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="flex items-center gap-2">
+        <Switch id={switchId} aria-label={ariaLabel} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+        <Label htmlFor={switchId} className="text-xs text-muted-foreground">
+          ein/ausblenden
+        </Label>
+      </div>
+    </div>
+  )
+}
+
+// Eigene Komponente fuer die ref-Zuweisung: jede Komponente weist ihre
+// eigenen Refs waehrend ihres EIGENEN Renderns zu, das ist der normale,
+// vom React Compiler akzeptierte Fall (anders als eine ref-Zuweisung, die
+// aus dem useMemo eines Elternteils "importiert" wird).
+function ColumnRowItem({
+  row,
+  nodeRefs,
+  onThemenblockClick,
+  onDimensionGroupClick,
+  onNodeSelect,
+}: {
+  row: ColumnRow
+  nodeRefs: React.RefObject<Map<string, HTMLDivElement>>
+  onThemenblockClick: (id: string) => void
+  onDimensionGroupClick: (id: string) => void
+  onNodeSelect: (node: DossierNodeData) => void
+}) {
+  if (row.kind === 'themenblock') {
+    return (
+      <GraphNode
+        ref={(el) => {
+          if (!el) return
+          nodeRefs.current.set(row.id, el)
+          return () => {
+            nodeRefs.current.delete(row.id)
+          }
+        }}
+        node={row.node}
+        expanded={row.expanded}
+        highlight={row.highlight}
+        onClick={() => onThemenblockClick(row.id)}
+      />
+    )
+  }
+
+  if (row.kind === 'dimensiongroup') {
+    return (
+      <DimensionGroupNode
+        ref={(el) => {
+          if (!el) return
+          nodeRefs.current.set(row.id, el)
+          return () => {
+            nodeRefs.current.delete(row.id)
+          }
+        }}
+        dimensionName={row.dimensionName}
+        count={row.count}
+        expanded={row.expanded}
+        highlight={row.highlight}
+        onClick={() => onDimensionGroupClick(row.id)}
+      />
+    )
+  }
+
+  return (
+    <GraphNode
+      ref={(el) => {
+        if (!el) return
+        nodeRefs.current.set(row.id, el)
+        return () => {
+          nodeRefs.current.delete(row.id)
+        }
+      }}
+      node={row.node}
+      highlight={row.highlight}
+      onClick={() => onNodeSelect(row.node)}
+    />
+  )
 }
 
 export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
@@ -76,6 +177,10 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
 
   const visibleColumnCount = [ebene1Visible, ebene2Visible, ebene3Visible].filter(Boolean).length
 
+  // Haelt die tatsaechlichen DOM-Elemente der aktuell sichtbaren Knoten, um
+  // ihre Position fuer die SVG-Kanten-Overlay zu messen (siehe unten).
+  const nodeRefs = useRef(new Map<string, HTMLDivElement>())
+
   const toggleExpanded = (themenblockId: string) => {
     setExpandedThemenbloecke((prev) => {
       const next = new Set(prev)
@@ -94,9 +199,6 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
     })
   }
 
-  // Ausgeblendete Spalten leeren die davon betroffene Auswahl/den Filter -
-  // sonst bliebe z. B. ein Dimension-Dossier mit veralteten Inhalten offen,
-  // oder der Persona-Filter zeigt auf eine gerade unsichtbare Ebene.
   const handleEbene1Toggle = (visible: boolean) => {
     setEbene1Visible(visible)
     if (!visible && selectedNode?.type === 'frage') setSelectedNode(null)
@@ -113,9 +215,6 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
     if (!visible && selectedNode?.type === 'contentblock') setSelectedNode(null)
   }
 
-  // Personas fuer den globalen Filter (Nutzer-Feedback 2026-08-28) - ersetzt
-  // an dieser Stelle den frueheren alleinstehenden Ebene-2-Schalter, der
-  // jetzt zu den per-Spalten-Schaltern unten gewandert ist.
   const personas = useMemo(
     () =>
       Array.from(
@@ -131,15 +230,9 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
     }
     setSelectedPersona(value)
     setSelectedNode(null)
-    // Der Persona-Filter ist ein Ebene-2-Konzept - ohne sichtbare Ebene 2
-    // gaebe es nichts zu highlighten.
     if (!ebene2Visible) setEbene2Visible(true)
   }
 
-  // Wiederkehrende Dimensionen (gleicher Name, mehrere Personas-Instanzen)
-  // werden gruppiert/kollabierbar dargestellt - Einzelinstanzen (z. B.
-  // "Umsetzungsrahmen", projektweit) nie, da Gruppierung dort keinen
-  // Kompaktheits-Gewinn braechte (Nutzer-Feedback 2026-08-28).
   const dimensionsByName = useMemo(() => {
     const byName = new Map<string, DimensionNode[]>()
     for (const d of model.dimensionen) {
@@ -150,28 +243,18 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
     return byName
   }, [model])
 
-  const columnX = useMemo(() => {
-    const order: Array<{ key: 'ebene1' | 'ebene2' | 'ebene3'; visible: boolean }> = [
-      { key: 'ebene1', visible: ebene1Visible },
-      { key: 'ebene2', visible: ebene2Visible },
-      { key: 'ebene3', visible: ebene3Visible },
-    ]
-    const visibleColumns = order.filter((c) => c.visible).map((c) => c.key)
-    return Object.fromEntries(visibleColumns.map((key, i) => [key, i * COLUMN_WIDTH])) as Record<string, number>
-  }, [ebene1Visible, ebene2Visible, ebene3Visible])
+  const handleNodeSelect = (node: DossierNodeData) => {
+    setSelectedNode(node)
+    setSelectedPersona(null)
+  }
 
-  const { nodes, edges } = useMemo(() => {
+  const renderData = useMemo(() => {
     const highlight: HighlightResult | null = selectedNode
       ? computeHighlight(selectedNode.id, model, ebene2Visible)
       : selectedPersona
         ? computeHighlightForPersona(selectedPersona, model, ebene2Visible)
         : null
 
-    // Themenblock-/Dimensionsgruppen-Knoten sind selbst nie Teil einer
-    // Herkunft/Wirkung-Spur (computeHighlight() traversiert nur Frage/
-    // Dimension/Content-Block) - ist aber eines ihrer (eingeklappten)
-    // Kinder aktiv, soll der Sammel-Knoten das sichtbar mit anzeigen, da
-    // die Sammel-Kante (siehe buildEffectiveEdges) dann von ihm ausgeht.
     const themenblockHasActiveChild = new Set(
       model.themenbloecke
         .filter((tb) => highlight && tb.frageIds.some((id) => highlight.activeNodeIds.has(id)))
@@ -194,131 +277,94 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
       return highlight.activeNodeIds.has(nodeId) ? 'active' : 'dim'
     }
 
-    const nodes: FlowNode[] = []
+    const col1Rows: ColumnRow[] = []
     const visibleFrageIds = new Set<string>()
-    const visibleDimensionIds = new Set<string>()
-
     if (ebene1Visible) {
-      let y = 0
       for (const themenblock of model.themenbloecke) {
         const expanded = expandedThemenbloecke.has(themenblock.id)
-        nodes.push({
+        col1Rows.push({
+          kind: 'themenblock',
           id: themenblock.id,
-          type: 'themenblock',
-          position: { x: columnX.ebene1, y },
-          data: { node: themenblock, expanded, highlight: highlightFor(themenblock.id, 'themenblock') },
-          draggable: false,
+          indent: false,
+          node: themenblock,
+          expanded,
+          highlight: highlightFor(themenblock.id, 'themenblock'),
         })
-        y += ROW_HEIGHT
         if (expanded) {
           for (const frageId of themenblock.frageIds) {
             const frage = model.fragen.find((f) => f.id === frageId)
             if (!frage) continue
-            nodes.push({
-              id: frage.id,
-              type: 'frage',
-              position: { x: columnX.ebene1 + CHILD_INDENT_X, y },
-              data: { node: frage, highlight: highlightFor(frage.id) },
-              draggable: false,
-            })
             visibleFrageIds.add(frage.id)
-            y += ROW_HEIGHT
+            col1Rows.push({ kind: 'frage', id: frage.id, indent: true, node: frage, highlight: highlightFor(frage.id) })
           }
         }
       }
     }
 
+    const col2Rows: ColumnRow[] = []
+    const visibleDimensionIds = new Set<string>()
     if (ebene2Visible) {
-      let y2 = 0
       for (const [dimensionName, instances] of dimensionsByName) {
         if (instances.length === 1) {
           const dimension = instances[0]
-          nodes.push({
-            id: dimension.id,
-            type: 'dimension',
-            position: { x: columnX.ebene2, y: y2 },
-            data: { node: dimension, highlight: highlightFor(dimension.id) },
-            draggable: false,
-          })
           visibleDimensionIds.add(dimension.id)
-          y2 += ROW_HEIGHT
+          col2Rows.push({
+            kind: 'dimension',
+            id: dimension.id,
+            indent: false,
+            node: dimension,
+            highlight: highlightFor(dimension.id),
+          })
           continue
         }
 
         const groupId = dimensionGroupId(dimensionName)
         const expanded = expandedDimensionGroups.has(groupId)
-        nodes.push({
+        col2Rows.push({
+          kind: 'dimensiongroup',
           id: groupId,
-          type: 'dimensiongroup',
-          position: { x: columnX.ebene2, y: y2 },
-          data: { dimensionName, count: instances.length, expanded, highlight: highlightFor(groupId, 'dimensiongroup') },
-          draggable: false,
+          indent: false,
+          dimensionName,
+          count: instances.length,
+          expanded,
+          highlight: highlightFor(groupId, 'dimensiongroup'),
         })
-        y2 += ROW_HEIGHT
         if (expanded) {
           for (const dimension of instances) {
-            nodes.push({
-              id: dimension.id,
-              type: 'dimension',
-              position: { x: columnX.ebene2 + CHILD_INDENT_X, y: y2 },
-              data: { node: dimension, highlight: highlightFor(dimension.id) },
-              draggable: false,
-            })
             visibleDimensionIds.add(dimension.id)
-            y2 += ROW_HEIGHT
+            col2Rows.push({
+              kind: 'dimension',
+              id: dimension.id,
+              indent: true,
+              node: dimension,
+              highlight: highlightFor(dimension.id),
+            })
           }
         }
       }
     }
 
+    const col3Rows: ColumnRow[] = []
     if (ebene3Visible) {
-      let y3 = 0
       for (const block of model.contentBlocks) {
-        nodes.push({
-          id: block.id,
-          type: 'contentblock',
-          position: { x: columnX.ebene3, y: y3 },
-          data: { node: block, highlight: highlightFor(block.id) },
-          draggable: false,
-        })
-        y3 += ROW_HEIGHT
+        col3Rows.push({ kind: 'contentblock', id: block.id, indent: false, node: block, highlight: highlightFor(block.id) })
       }
     }
 
-    // Aktive Kanten (Teil der Herkunft/Wirkung des ausgewaehlten Knotens
-    // oder des Persona-Filters) werden orange hervorgehoben, alle anderen
-    // stark abgedunkelt - analog zum Referenz-Sketch (siehe PROJ-5-
-    // Implementierungsnotizen). Eine (ggf. zusammengefasste) Kante gilt als
-    // aktiv, wenn mindestens eine ihrer urspruenglichen Kanten aktiv ist.
-    const edgeStyle = (originalEdgeIds: string[], base: CSSProperties = {}): CSSProperties => {
-      if (!highlight) return base
-      if (originalEdgeIds.some((id) => highlight.activeEdgeIds.has(id))) {
-        return { ...base, stroke: ACTIVE_EDGE_COLOR, opacity: 1, strokeWidth: 2 }
-      }
-      return { ...base, opacity: 0.06 }
-    }
-
-    const edges: Edge[] = buildEffectiveEdges(model, {
+    const effectiveEdges = buildEffectiveEdges(model, {
       ebene1Visible,
       ebene2Visible,
       ebene3Visible,
       visibleFrageIds,
       visibleDimensionIds,
-    }).map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      animated: false,
-      style: edgeStyle(e.originalEdgeIds, ebene2Visible ? {} : { strokeDasharray: '4 4' }),
-    }))
+    })
 
-    return { nodes, edges }
+    return { col1Rows, col2Rows, col3Rows, effectiveEdges, highlight }
   }, [
     model,
     ebene1Visible,
     ebene2Visible,
     ebene3Visible,
-    columnX,
     expandedThemenbloecke,
     expandedDimensionGroups,
     dimensionsByName,
@@ -326,23 +372,59 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
     selectedPersona,
   ])
 
-  // Themenblock-/Dimensionsgruppen-Knoten klappen nur auf/zu (Navigation) -
-  // das Dossier oeffnet sich nur bei den eigentlichen Detail-Knoten. Getrennt
-  // gehalten, weil das Dossier ein nicht-blockierendes Seitenpanel ist, ein
-  // Klick sollte trotzdem nie beides gleichzeitig ausloesen.
-  const handleNodeClick = (_: unknown, node: FlowNode) => {
-    if (node.type === 'dimensiongroup') {
-      toggleDimensionGroupExpanded(node.id)
-      return
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const [edgePaths, setEdgePaths] = useState<EdgePath[]>([])
+  const computeEdgesRef = useRef<() => void>(() => {})
+
+  // Kanten-Pfade aus den tatsaechlichen DOM-Positionen der Knoten berechnen
+  // (rechter Rand des Quell-Knotens -> linker Rand des Ziel-Knotens, kubische
+  // Bezier-Kurve dazwischen) - exakt die Formel aus dem Referenz-Sketch
+  // (drawEdges()), portiert auf React Refs statt direkter DOM-Manipulation.
+  useLayoutEffect(() => {
+    computeEdgesRef.current = () => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const canvasRect = canvas.getBoundingClientRect()
+      const paths: EdgePath[] = []
+      for (const e of renderData.effectiveEdges) {
+        const fromEl = nodeRefs.current.get(e.source)
+        const toEl = nodeRefs.current.get(e.target)
+        if (!fromEl || !toEl) continue
+        const fr = fromEl.getBoundingClientRect()
+        const tr = toEl.getBoundingClientRect()
+        const x1 = fr.right - canvasRect.left
+        const y1 = fr.top - canvasRect.top + fr.height / 2
+        const x2 = tr.left - canvasRect.left
+        const y2 = tr.top - canvasRect.top + tr.height / 2
+        const dx = Math.max(36, (x2 - x1) * 0.5)
+        const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
+        const active = renderData.highlight ? e.originalEdgeIds.some((id) => renderData.highlight!.activeEdgeIds.has(id)) : false
+        paths.push({ id: e.id, d, active })
+      }
+      setEdgePaths(paths)
     }
-    const data = node.data as GraphFlowNodeData
-    if (data.node.type === 'themenblock') {
-      toggleExpanded(node.id)
-      return
+    computeEdgesRef.current()
+  }, [renderData])
+
+  // Neu berechnen bei Groessenaenderung (Fensterbreite, Spalten-Ein-/
+  // Ausblenden veraendert die verfuegbare Breite) - ResizeObserver auf der
+  // Canvas selbst, nicht nur `window.resize`, da auch layoutinterne
+  // Verschiebungen (z. B. Schriftart-Ladezeitpunkt) die Positionen leicht
+  // verschieben koennen.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handler = () => computeEdgesRef.current()
+    const observer = new ResizeObserver(handler)
+    observer.observe(canvas)
+    window.addEventListener('resize', handler)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', handler)
     }
-    setSelectedNode(data.node)
-    setSelectedPersona(null)
-  }
+  }, [])
+
+  const highlightExists = renderData.highlight !== null
 
   return (
     <div className="space-y-3">
@@ -365,84 +447,97 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
         </Select>
       </div>
 
-      {/* Spalten-Header direkt ueber der jeweiligen Spalte (Nutzer-Feedback
-          2026-08-28, nach Referenz-Sketch: Eyebrow + Titel + ein kompakter
-          Schalter "ein/ausblenden" statt eines langen Labels) - ersetzt die
-          vorherige, davon losgeloeste Schalter-Reihe. Ab "sm" nebeneinander
-          (3 Spalten passen erst ab da nebeneinander ohne Textabschneidung/
-          -umbruch, eigene Verifikation 2026-08-28, 375px); darunter
-          gestapelt, damit jeder Header seine volle Breite behaelt. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="min-w-0 space-y-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Ebene 1 · Input
-          </div>
-          <div className="text-sm font-semibold">Themenblöcke</div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="ebene1-toggle"
-              aria-label="Themenblöcke (Ebene 1) anzeigen"
+      <div data-testid="graph-canvas" className="overflow-x-auto rounded-lg border bg-muted/20 pb-4">
+        <div ref={canvasRef} className="relative flex items-start gap-10 p-6">
+          <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+            {edgePaths.map((edge) => {
+              const style: CSSProperties = highlightExists
+                ? edge.active
+                  ? { stroke: ACTIVE_EDGE_COLOR, opacity: 1, strokeWidth: 2 }
+                  : { stroke: NEUTRAL_EDGE_COLOR, opacity: 0.08, strokeWidth: 1.3 }
+                : { stroke: NEUTRAL_EDGE_COLOR, opacity: 0.5, strokeWidth: 1.3 }
+              return (
+                <path
+                  key={edge.id}
+                  data-edge-active={edge.active}
+                  d={edge.d}
+                  fill="none"
+                  strokeDasharray={ebene2Visible ? undefined : '4 4'}
+                  style={style}
+                />
+              )
+            })}
+          </svg>
+
+          <div className="relative z-10 flex w-60 shrink-0 flex-col gap-3">
+            <ColumnHeader
+              eyebrow="Ebene 1 · Input"
+              title="Themenblöcke"
+              switchId="ebene1-toggle"
+              ariaLabel="Themenblöcke (Ebene 1) anzeigen"
               checked={ebene1Visible}
               disabled={ebene1Visible && visibleColumnCount === 1}
               onCheckedChange={handleEbene1Toggle}
             />
-            <Label htmlFor="ebene1-toggle" className="text-xs text-muted-foreground">
-              ein/ausblenden
-            </Label>
+            {renderData.col1Rows.map((row) => (
+              <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
+                <ColumnRowItem
+                  row={row}
+                  nodeRefs={nodeRefs}
+                  onThemenblockClick={toggleExpanded}
+                  onDimensionGroupClick={toggleDimensionGroupExpanded}
+                  onNodeSelect={handleNodeSelect}
+                />
+              </div>
+            ))}
           </div>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Ebene 2 · verdeckt
-          </div>
-          <div className="text-sm font-semibold">Profildimensionen</div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="ebene2-toggle"
-              aria-label="Profildimensionen (Ebene 2) anzeigen"
+
+          <div className="relative z-10 flex w-56 shrink-0 flex-col gap-3">
+            <ColumnHeader
+              eyebrow="Ebene 2 · verdeckt"
+              title="Profildimensionen"
+              switchId="ebene2-toggle"
+              ariaLabel="Profildimensionen (Ebene 2) anzeigen"
               checked={ebene2Visible}
               disabled={ebene2Visible && visibleColumnCount === 1}
               onCheckedChange={handleEbene2Toggle}
             />
-            <Label htmlFor="ebene2-toggle" className="text-xs text-muted-foreground">
-              ein/ausblenden
-            </Label>
+            {renderData.col2Rows.map((row) => (
+              <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
+                <ColumnRowItem
+                  row={row}
+                  nodeRefs={nodeRefs}
+                  onThemenblockClick={toggleExpanded}
+                  onDimensionGroupClick={toggleDimensionGroupExpanded}
+                  onNodeSelect={handleNodeSelect}
+                />
+              </div>
+            ))}
           </div>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Ebene 3 · Output
-          </div>
-          <div className="text-sm font-semibold">Content-Blöcke</div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="ebene3-toggle"
-              aria-label="Content-Blöcke (Ebene 3) anzeigen"
+
+          <div className="relative z-10 flex w-72 shrink-0 flex-col gap-3">
+            <ColumnHeader
+              eyebrow="Ebene 3 · Output"
+              title="Content-Blöcke"
+              switchId="ebene3-toggle"
+              ariaLabel="Content-Blöcke (Ebene 3) anzeigen"
               checked={ebene3Visible}
               disabled={ebene3Visible && visibleColumnCount === 1}
               onCheckedChange={handleEbene3Toggle}
             />
-            <Label htmlFor="ebene3-toggle" className="text-xs text-muted-foreground">
-              ein/ausblenden
-            </Label>
+            {renderData.col3Rows.map((row) => (
+              <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
+                <ColumnRowItem
+                  row={row}
+                  nodeRefs={nodeRefs}
+                  onThemenblockClick={toggleExpanded}
+                  onDimensionGroupClick={toggleDimensionGroupExpanded}
+                  onNodeSelect={handleNodeSelect}
+                />
+              </div>
+            ))}
           </div>
         </div>
-      </div>
-
-      <div className="h-[70vh] w-full rounded-lg border">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={NODE_TYPES}
-          onNodeClick={handleNodeClick}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          fitView
-        >
-          <Background />
-          <Controls showInteractive={false} />
-          <AutoFitView nodeIdsKey={nodes.map((n) => n.id).sort().join(',')} />
-        </ReactFlow>
       </div>
 
       <DossierPanel model={model} node={selectedNode} onOpenChange={(open) => !open && setSelectedNode(null)} />

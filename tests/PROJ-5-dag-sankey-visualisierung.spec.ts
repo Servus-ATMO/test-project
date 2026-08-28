@@ -121,7 +121,7 @@ test('AC: no import yet shows a hint with a link to the Import-Werkstatt, not an
   await page.goto(`/kunden/${clientId}/${projectId}/graph`, { waitUntil: 'networkidle' })
   await expect(page.getByText('noch kein Interview-Import vor')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Zur Import-Werkstatt' })).toBeVisible()
-  await expect(page.locator('.react-flow')).toHaveCount(0)
+  await expect(page.getByTestId('graph-canvas')).toHaveCount(0)
 })
 
 test('PROJ-5: full flow - import-without-enrichment hint, then full graph with all node/edge/highlight behaviors', async ({
@@ -171,7 +171,7 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   // --- AC: Import + Anreicherung vorhanden -> voller Graph ---
   await page.goto(`/kunden/${clientId}/${projectId}/graph`, { waitUntil: 'networkidle' })
   await expect(page.getByText('Konzept-Graph')).toBeVisible()
-  await expect(page.locator('.react-flow')).toBeVisible()
+  await expect(page.getByTestId('graph-canvas')).toBeVisible()
 
   // --- AC: Themenblock als Hauptknoten, Fragen erst nach Aufklappen sichtbar ---
   await expect(page.getByText('Phase 1–3 – Ziel, Kontext & Herkunft')).toBeVisible()
@@ -180,14 +180,14 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   await expect(page.getByText('Frage 1', { exact: true })).toBeVisible()
 
   // --- AC: explizite Konflikte markieren auch die beiden beteiligten Frage-Knoten ---
-  const frage1Node = page.locator('.react-flow__node').filter({ hasText: 'Frage 1' })
-  const frage2Node = page.locator('.react-flow__node').filter({ hasText: 'Frage 2' })
+  const frage1Node = page.locator('[data-node-id]').filter({ hasText: 'Frage 1' })
+  const frage2Node = page.locator('[data-node-id]').filter({ hasText: 'Frage 2' })
   await expect(frage1Node.getByText('Konflikt')).toBeVisible()
   await expect(frage2Node.getByText('Konflikt')).toBeVisible()
 
   // --- AC: Ebene 2 standardmaessig ausgeblendet, Sammel-/komprimierte Kante trotzdem sichtbar ---
   await expect(page.getByText('Business Goal').first()).toHaveCount(0)
-  await expect(page.locator('.react-flow__edge').first()).toBeVisible()
+  await expect(page.locator('svg path').first()).toBeVisible()
 
   // --- AC: Ebene-2-Schalter blendet Profildimension-Knoten ein ---
   await page.getByLabel('Profildimensionen (Ebene 2) anzeigen').click()
@@ -196,7 +196,7 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   // --- Nutzer-Feedback 2026-08-28: wiederkehrende Dimensionen (mehrere
   // Personas) werden standardmaessig als kollabierte Gruppe gezeigt statt
   // einzelner Knoten - erst aufklappen zeigt beide Instanzen.
-  const businessGoalGroup = page.locator('.react-flow__node').filter({ hasText: 'Business Goal' }).first()
+  const businessGoalGroup = page.locator('[data-node-id^="dimgroup:"]').filter({ hasText: 'Business Goal' })
   await expect(businessGoalGroup.getByText('2', { exact: true })).toBeVisible()
   await businessGoalGroup.click()
 
@@ -204,11 +204,11 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   // ("Direktkäufer" allein waere mehrdeutig - passt auch auf "Target Audience",
   // das denselben Persona-Namen hat, siehe Fixture)
   const direktkaeuferNode = page
-    .locator('.react-flow__node')
+    .locator('[data-node-id]')
     .filter({ hasText: 'Business Goal' })
     .filter({ hasText: 'Direktkäufer' })
   const influencerNode = page
-    .locator('.react-flow__node')
+    .locator('[data-node-id]')
     .filter({ hasText: 'Business Goal' })
     .filter({ hasText: 'Influencer-Partner' })
   await expect(direktkaeuferNode).toBeVisible()
@@ -238,7 +238,7 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   await page.getByRole('button', { name: 'Schließen' }).click()
 
   // --- AC: konfliktmarkierter Knoten zeigt Konflikt-Beschreibung, keine Loesungsoptionen ---
-  const heroConflictBadge = page.locator('.react-flow__node').filter({ hasText: 'Abschnitt 1: Hero' })
+  const heroConflictBadge = page.locator('[data-node-id]').filter({ hasText: 'Abschnitt 1: Hero' })
   await expect(heroConflictBadge.getByText('Konflikt')).toBeVisible()
   await heroConflictBadge.click()
   await expect(page.getByText('Der Hero muss gleichzeitig auf Direktverkauf und Empfehlungslogik')).toBeVisible()
@@ -248,20 +248,16 @@ test('PROJ-5: full flow - import-without-enrichment hint, then full graph with a
   // --- AC: Klick hebt verbundene Knoten/Kanten hervor (Herkunft/Wirkung-Highlight) ---
   await direktkaeuferNode.click()
   await expect
-    .poll(
-      async () =>
-        page.locator('.react-flow__edge-path').evaluateAll((paths) =>
-          paths.filter((p) => p.getAttribute('style')?.includes('rgb(249, 115, 22)')).length
-        ),
-      { message: 'erwarte mindestens eine orange hervorgehobene Kante nach Knoten-Klick' }
-    )
+    .poll(async () => page.locator('svg path[data-edge-active="true"]').count(), {
+      message: 'erwarte mindestens eine hervorgehobene Kante nach Knoten-Klick',
+    })
     .toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Schließen' }).click()
 
   // --- AC: Ebene 2 wieder ausblenden -> Profildimension-Knoten verschwinden, komprimierte Kante bleibt ---
   await page.getByLabel('Profildimensionen (Ebene 2) anzeigen').click()
   await expect(page.getByText('Business Goal').first()).toHaveCount(0)
-  await expect(page.locator('.react-flow__edge').first()).toBeVisible()
+  await expect(page.locator('svg path').first()).toBeVisible()
 
   expect(consoleErrors, `Konsolenfehler: ${consoleErrors.join('\n')}`).toEqual([])
 })
@@ -272,5 +268,5 @@ test('mobile viewport (375px): graph page renders and the switch is usable', asy
   await page.goto(`/kunden/${clientId}/${projectId}/graph`, { waitUntil: 'networkidle' })
   await expect(page.getByText('Konzept-Graph')).toBeVisible()
   await expect(page.getByLabel('Profildimensionen (Ebene 2) anzeigen')).toBeVisible()
-  await expect(page.locator('.react-flow')).toBeVisible()
+  await expect(page.getByTestId('graph-canvas')).toBeVisible()
 })
