@@ -243,16 +243,22 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
     return byName
   }, [model])
 
+  // Das Dossier oeffnet sich unabhaengig von einem aktiven Persona-Filter
+  // (Nutzer-Feedback 2026-08-29: Filter/Highlight soll beim Anklicken eines
+  // Elements bzw. Oeffnen/Schliessen der Sidebar bestehen bleiben) - der
+  // Filter wird deshalb hier bewusst NICHT zurueckgesetzt.
   const handleNodeSelect = (node: DossierNodeData) => {
     setSelectedNode(node)
-    setSelectedPersona(null)
   }
 
   const renderData = useMemo(() => {
-    const highlight: HighlightResult | null = selectedNode
-      ? computeHighlight(selectedNode.id, model, ebene2Visible)
-      : selectedPersona
-        ? computeHighlightForPersona(selectedPersona, model, ebene2Visible)
+    // Persona-Filter hat Vorrang vor einer Knoten-Auswahl: ist ein Filter
+    // aktiv, bestimmt er weiterhin das Highlight, auch wenn nebenbei ein
+    // Dossier fuer einen (ggf. anderen) Knoten offen ist.
+    const highlight: HighlightResult | null = selectedPersona
+      ? computeHighlightForPersona(selectedPersona, model, ebene2Visible)
+      : selectedNode
+        ? computeHighlight(selectedNode.id, model, ebene2Visible)
         : null
 
     const themenblockHasActiveChild = new Set(
@@ -447,95 +453,104 @@ export function GraphView({ parsedImport, enrichment }: GraphViewProps) {
         </Select>
       </div>
 
-      <div data-testid="graph-canvas" className="overflow-x-auto rounded-lg border bg-muted/20 pb-4">
-        <div ref={canvasRef} className="relative flex items-start gap-10 p-6">
-          <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-            {edgePaths.map((edge) => {
-              const style: CSSProperties = highlightExists
-                ? edge.active
-                  ? { stroke: ACTIVE_EDGE_COLOR, opacity: 1, strokeWidth: 2 }
-                  : { stroke: NEUTRAL_EDGE_COLOR, opacity: 0.08, strokeWidth: 1.3 }
-                : { stroke: NEUTRAL_EDGE_COLOR, opacity: 0.5, strokeWidth: 1.3 }
-              return (
-                <path
-                  key={edge.id}
-                  data-edge-active={edge.active}
-                  d={edge.d}
-                  fill="none"
-                  strokeDasharray={ebene2Visible ? undefined : '4 4'}
-                  style={style}
-                />
-              )
-            })}
-          </svg>
+      {/* Bricht bewusst aus der max-w-5xl-Beschraenkung des umgebenden
+          Seitenlayouts aus (Nutzer-Feedback 2026-08-29: "Ebenen-Bereich soll
+          die gesamte Browserbreite nutzen koennen") - klassischer "full
+          bleed"-Trick unabhaengig von der Breite des Elternelements, siehe
+          https://css-tricks.com/full-width-containers-and-standard-content/.
+          Nur dieser Bereich, nicht die Seite insgesamt (Breadcrumb/Titel/
+          Persona-Filter bleiben im normalen Layout-Raster). */}
+      <div className="relative left-1/2 right-1/2 w-screen -mx-[50vw] px-4">
+        <div data-testid="graph-canvas" className="overflow-x-auto rounded-lg border bg-muted/20 pb-4">
+          <div ref={canvasRef} className="relative flex items-start gap-10 p-6">
+            <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+              {edgePaths.map((edge) => {
+                const style: CSSProperties = highlightExists
+                  ? edge.active
+                    ? { stroke: ACTIVE_EDGE_COLOR, opacity: 1, strokeWidth: 2 }
+                    : { stroke: NEUTRAL_EDGE_COLOR, opacity: 0.08, strokeWidth: 1.3 }
+                  : { stroke: NEUTRAL_EDGE_COLOR, opacity: 0.5, strokeWidth: 1.3 }
+                return (
+                  <path
+                    key={edge.id}
+                    data-edge-active={edge.active}
+                    d={edge.d}
+                    fill="none"
+                    strokeDasharray={ebene2Visible ? undefined : '4 4'}
+                    style={style}
+                  />
+                )
+              })}
+            </svg>
 
-          <div className="relative z-10 flex w-60 shrink-0 flex-col gap-3">
-            <ColumnHeader
-              eyebrow="Ebene 1 · Input"
-              title="Themenblöcke"
-              switchId="ebene1-toggle"
-              ariaLabel="Themenblöcke (Ebene 1) anzeigen"
-              checked={ebene1Visible}
-              disabled={ebene1Visible && visibleColumnCount === 1}
-              onCheckedChange={handleEbene1Toggle}
-            />
-            {renderData.col1Rows.map((row) => (
-              <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
-                <ColumnRowItem
-                  row={row}
-                  nodeRefs={nodeRefs}
-                  onThemenblockClick={toggleExpanded}
-                  onDimensionGroupClick={toggleDimensionGroupExpanded}
-                  onNodeSelect={handleNodeSelect}
-                />
-              </div>
-            ))}
-          </div>
+            <div className="relative z-10 flex w-60 shrink-0 flex-col gap-3">
+              <ColumnHeader
+                eyebrow="Ebene 1 · Input"
+                title="Themenblöcke"
+                switchId="ebene1-toggle"
+                ariaLabel="Themenblöcke (Ebene 1) anzeigen"
+                checked={ebene1Visible}
+                disabled={ebene1Visible && visibleColumnCount === 1}
+                onCheckedChange={handleEbene1Toggle}
+              />
+              {renderData.col1Rows.map((row) => (
+                <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
+                  <ColumnRowItem
+                    row={row}
+                    nodeRefs={nodeRefs}
+                    onThemenblockClick={toggleExpanded}
+                    onDimensionGroupClick={toggleDimensionGroupExpanded}
+                    onNodeSelect={handleNodeSelect}
+                  />
+                </div>
+              ))}
+            </div>
 
-          <div className="relative z-10 flex w-56 shrink-0 flex-col gap-3">
-            <ColumnHeader
-              eyebrow="Ebene 2 · verdeckt"
-              title="Profildimensionen"
-              switchId="ebene2-toggle"
-              ariaLabel="Profildimensionen (Ebene 2) anzeigen"
-              checked={ebene2Visible}
-              disabled={ebene2Visible && visibleColumnCount === 1}
-              onCheckedChange={handleEbene2Toggle}
-            />
-            {renderData.col2Rows.map((row) => (
-              <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
-                <ColumnRowItem
-                  row={row}
-                  nodeRefs={nodeRefs}
-                  onThemenblockClick={toggleExpanded}
-                  onDimensionGroupClick={toggleDimensionGroupExpanded}
-                  onNodeSelect={handleNodeSelect}
-                />
-              </div>
-            ))}
-          </div>
+            <div className="relative z-10 flex w-56 shrink-0 flex-col gap-3">
+              <ColumnHeader
+                eyebrow="Ebene 2 · verdeckt"
+                title="Profildimensionen"
+                switchId="ebene2-toggle"
+                ariaLabel="Profildimensionen (Ebene 2) anzeigen"
+                checked={ebene2Visible}
+                disabled={ebene2Visible && visibleColumnCount === 1}
+                onCheckedChange={handleEbene2Toggle}
+              />
+              {renderData.col2Rows.map((row) => (
+                <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
+                  <ColumnRowItem
+                    row={row}
+                    nodeRefs={nodeRefs}
+                    onThemenblockClick={toggleExpanded}
+                    onDimensionGroupClick={toggleDimensionGroupExpanded}
+                    onNodeSelect={handleNodeSelect}
+                  />
+                </div>
+              ))}
+            </div>
 
-          <div className="relative z-10 flex w-72 shrink-0 flex-col gap-3">
-            <ColumnHeader
-              eyebrow="Ebene 3 · Output"
-              title="Content-Blöcke"
-              switchId="ebene3-toggle"
-              ariaLabel="Content-Blöcke (Ebene 3) anzeigen"
-              checked={ebene3Visible}
-              disabled={ebene3Visible && visibleColumnCount === 1}
-              onCheckedChange={handleEbene3Toggle}
-            />
-            {renderData.col3Rows.map((row) => (
-              <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
-                <ColumnRowItem
-                  row={row}
-                  nodeRefs={nodeRefs}
-                  onThemenblockClick={toggleExpanded}
-                  onDimensionGroupClick={toggleDimensionGroupExpanded}
-                  onNodeSelect={handleNodeSelect}
-                />
-              </div>
-            ))}
+            <div className="relative z-10 flex w-72 shrink-0 flex-col gap-3">
+              <ColumnHeader
+                eyebrow="Ebene 3 · Output"
+                title="Content-Blöcke"
+                switchId="ebene3-toggle"
+                ariaLabel="Content-Blöcke (Ebene 3) anzeigen"
+                checked={ebene3Visible}
+                disabled={ebene3Visible && visibleColumnCount === 1}
+                onCheckedChange={handleEbene3Toggle}
+              />
+              {renderData.col3Rows.map((row) => (
+                <div key={row.id} data-node-id={row.id} className={row.indent ? 'pl-4' : undefined}>
+                  <ColumnRowItem
+                    row={row}
+                    nodeRefs={nodeRefs}
+                    onThemenblockClick={toggleExpanded}
+                    onDimensionGroupClick={toggleDimensionGroupExpanded}
+                    onNodeSelect={handleNodeSelect}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
