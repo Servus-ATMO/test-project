@@ -270,3 +270,71 @@ test('mobile viewport (375px): graph page renders and the switch is usable', asy
   await expect(page.getByLabel('Profildimensionen (Ebene 2) anzeigen')).toBeVisible()
   await expect(page.getByTestId('graph-canvas')).toBeVisible()
 })
+
+// Graph-UI-Batch (per-Spalten-Sichtbarkeit, Persona-Filter, Ebene-2-
+// Dimensionsgruppierung fuer Einzelinstanzen): direkt vom Nutzer waehrend
+// `/frontend` beauftragte Erweiterungen, noch nicht als eigene ACs im Spec
+// formalisiert (siehe QA Test Results, Empfehlung fuer ein spaeteres
+// `/refine PROJ-5`) - trotzdem hier mit permanenter Regressionsabdeckung,
+// da real ausgelieferte, nutzerseitig getestete Funktionalitaet.
+test('Graph-UI-Batch: per-column visibility, persona filter incl. dossier interaction, single-instance dimensions never grouped', async ({
+  page,
+}) => {
+  await login(page)
+  await page.goto(`/kunden/${clientId}/${projectId}/graph`, { waitUntil: 'networkidle' })
+  await page.getByLabel('Profildimensionen (Ebene 2) anzeigen').click()
+
+  // --- Einzelinstanz-Dimensionen werden nie gruppiert (kein Zaehler-Badge) ---
+  const targetAudienceNode = page.locator('[data-node-id]').filter({ hasText: 'Target Audience' })
+  const targetAudienceCard = targetAudienceNode.locator('> div')
+  await expect(targetAudienceNode).toBeVisible()
+  await expect(targetAudienceNode).not.toHaveAttribute('data-node-id', /^dimgroup:/)
+  const umsetzungsrahmenNode = page.locator('[data-node-id]').filter({ hasText: 'Umsetzungsrahmen' })
+  await expect(umsetzungsrahmenNode).toBeVisible()
+
+  // --- Jede Spalte einzeln ausblendbar (nicht nur Ebene 2) ---
+  await page.getByLabel('Themenblöcke (Ebene 1) anzeigen').click()
+  await expect(page.getByText('Phase 1–3', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('Business Goal').first()).toBeVisible() // Ebene 2 bleibt unberuehrt
+  await page.getByLabel('Content-Blöcke (Ebene 3) anzeigen').click()
+  await expect(page.getByText('Abschnitt 1: Hero')).toHaveCount(0)
+
+  // --- Letzte verbleibende sichtbare Spalte kann nicht ausgeblendet werden ---
+  await expect(page.getByLabel('Profildimensionen (Ebene 2) anzeigen')).toBeDisabled()
+
+  // Spalten wiederherstellen fuer die folgenden Assertions
+  await page.getByLabel('Themenblöcke (Ebene 1) anzeigen').click()
+  await page.getByLabel('Content-Blöcke (Ebene 3) anzeigen').click()
+  await expect(page.getByText('Phase 1–3', { exact: false })).toBeVisible()
+  await expect(page.getByText('Abschnitt 1: Hero')).toBeVisible()
+
+  // --- Persona-Filter: Auswahl highlightet nur die Verbindungen dieser Persona ---
+  await page.getByRole('combobox', { name: 'Persona-Filter' }).click()
+  await page.getByRole('option', { name: 'Direktkäufer' }).click()
+  await expect(targetAudienceCard).not.toHaveClass(/opacity-30/) // Direktkäufer-Instanz ist aktiv
+  const heroNode = page.locator('[data-node-id]').filter({ hasText: 'Abschnitt 1: Hero' }).locator('> div')
+  await expect(heroNode).not.toHaveClass(/opacity-30/)
+
+  // --- Filter bleibt beim Anklicken eines Knotens bestehen (Dropdown-Wert),
+  // aber das Highlight wechselt auf die eigenen Verbindungen des Knotens ---
+  await heroNode.click()
+  await expect(page.getByRole('complementary', { name: 'Dossier' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Persona-Filter' })).toContainText('Direktkäufer')
+  const socialProofNode = page
+    .locator('[data-node-id]')
+    .filter({ hasText: 'Abschnitt 2: Social Proof' })
+    .locator('> div')
+  await expect(socialProofNode).toHaveClass(/opacity-30/) // keine Kante von Hero dorthin
+
+  // --- Dossier schliessen -> Persona-Highlight wieder aktiv, Filter weiterhin gesetzt ---
+  await page.getByRole('button', { name: 'Schließen' }).click()
+  await expect(page.getByRole('combobox', { name: 'Persona-Filter' })).toContainText('Direktkäufer')
+  await expect
+    .poll(async () => page.locator('svg path[data-edge-active="true"]').count())
+    .toBeGreaterThan(0)
+
+  // --- Filter zuruecksetzen ---
+  await page.getByRole('combobox', { name: 'Persona-Filter' }).click()
+  await page.getByRole('option', { name: 'Alle Personas' }).click()
+  await expect(targetAudienceCard).not.toHaveClass(/opacity-30/)
+})

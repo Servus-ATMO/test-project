@@ -1,10 +1,10 @@
 # PROJ-5: DAG/Sankey-Graph-Visualisierung
 
-## Status: In Progress
+## Status: Approved
 **Created:** 2026-08-28
-**Last Updated:** 2026-08-29 (Frontend)
+**Last Updated:** 2026-08-29 (QA)
 
-**Hinweis:** Die live deployte Version (siehe Deployment-Abschnitt) enthält noch nicht das Graph-UI-Batch (per-Spalten-Sichtbarkeit, Persona-Filter, Ebene-2-Dimensionsgruppierung, statische Spalten statt React-Flow-Canvas) — implementiert, aber noch nicht durch `/qa` gelaufen. Nächster Schritt: `/qa PROJ-5`.
+**Hinweis:** Die live deployte Version (siehe Deployment-Abschnitt) enthält noch nicht das Graph-UI-Batch (per-Spalten-Sichtbarkeit, Persona-Filter, Ebene-2-Dimensionsgruppierung, statische Spalten statt React-Flow-Canvas) — implementiert und durch `/qa` bestätigt (15/15 AC PASS, 0 neue Bugs, 1 unveränderter Low-Bug BUG-9, Production Ready: YES), aber noch nicht deployed. Nächster Schritt: `/deploy PROJ-5`.
 
 ## Implementierungsnotizen
 - **Feinschliff Breiten-Layout, zwei Runden (`/frontend`, 2026-08-29):** Der vorherige "full bleed"-Fix (siehe unten) machte den gesamten Bereich unter dem Persona-Filter volle Breite — der Nutzer wollte stattdessen: „graph-canvas" (die umschliessende Box) ist immer volle Browserbreite, aber die Spalten-Zeile DARIN bleibt am Titel ausgerichtet (linksbündig), solange ihr tatsächlicher Inhalt in die Standardbreite der Seite passt — erst wenn er breiter wird (z. B. durch eine künftige 4./5. Ebene), soll sie sich stattdessen im vollen Fenster zentrieren. Das ist eine inhaltsabhängige Fallunterscheidung, die reines CSS nicht abbilden kann (`justify-content:center` würde auch kleinen Inhalt immer mittig im vollen Fenster zeigen, nicht linksbündig zum Titel) — deshalb per JS gemessen: neues `src/lib/graph/content-alignment.ts` (`computeContentMarginLeft()`, reine, getestete Funktion) berechnet aus der tatsächlich gemessenen Inhaltsbreite (`ResizeObserver` auf der Spalten-Zeile, dieselbe Infrastruktur wie für die Kanten-Neuberechnung) und der Fensterbreite den nötigen `marginLeft` — Titel-Position wird dabei nicht per DOM-Query aus der Elternkomponente gelesen (fragil), sondern aus den bekannten Layout-Konstanten des umgebenden `(protected)/layout.tsx` (`max-w-5xl`, `px-4`) neu hergeleitet, mit Kommentar-Verweis auf die Kopplung. Spalten-Zeile bekam `w-fit` (schrumpft auf tatsächlichen Inhalt statt auf Elternbreite zu strecken), sonst wäre die gemessene Breite immer gleich der (jetzt vollen) graph-canvas-Breite gewesen.
@@ -192,9 +192,60 @@ Alles wird bei jedem Seitenaufruf frisch aus den bestehenden Tabellen gelesen un
 
 ## QA Test Results
 
-**Tested:** 2026-08-28
+**Aktuelle Runde (zweite Runde, 2026-08-29) — nach dem Rendering-Umbau (React Flow → statische Spalten + SVG) und dem Graph-UI-Batch.** Die Ergebnisse unten in diesem Abschnitt sind aktuell gültig. Die historische erste Runde (getestet gegen die React-Flow-Canvas, vor dem kompletten Rendering-Umbau) ist weiter unten unter „Historische Runde 1" archiviert — die dort verwendeten Selektoren (`.react-flow`, `.react-flow__node`) existieren im aktuellen Code nicht mehr, die funktionale Aussage (15/15 AC bestanden) bleibt aber inhaltlich gültig und wurde in dieser Runde erneut bestätigt.
+
+**Tested:** 2026-08-29
 **App URL:** http://localhost:3000
 **Tester:** QA Engineer (AI)
+
+### Vorgehen (zweite Runde)
+- `npm test` (119/119) und volle Playwright-Regression (76/76, 5 Suiten × 2 Browser) vor der eigentlichen QA-Runde geprüft.
+- Alle 15 ursprünglichen Acceptance Criteria erneut gegen die komplett neue Rendering-Schicht (statische Spalten + SVG-Kanten-Overlay statt React-Flow-Canvas) verifiziert — funktional identisches Verhalten, nur die DOM-Struktur/Selektoren haben sich geändert (bereits in der permanenten Suite nachgezogen).
+- **Zusätzlich getestet, aber noch nicht als formale AC im Spec erfasst** (siehe Empfehlung in der Summary): die drei Graph-UI-Batch-Fähigkeiten, die der Nutzer direkt während mehrerer `/frontend`-Runden beauftragt hat — per-Spalten-Sichtbarkeit (alle drei Ebenen einzeln), globaler Persona-Filter (inkl. des komplexen Zusammenspiels mit Knoten-Klick/Dossier, das drei Korrekturrunden brauchte, siehe Implementierungsnotizen), Ebene-2-Dimensionsgruppierung für wiederkehrende Dimensionen. Dafür ein neuer permanenter E2E-Test (`Graph-UI-Batch: ...`) geschrieben, der genau diese drei Fähigkeiten inkl. der Randfälle (letzte Spalte nicht ausblendbar, Einzelinstanzen nie gruppiert, Filter bleibt bei Dossier-Interaktion bestehen) abdeckt.
+- Manuelle Red-Team-Exploration: XSS-Payload-Pfade erneut überprüft (kein `dangerouslySetInnerHTML` im gesamten `src/components/graph/`/`src/lib/graph/`, per `grep` bestätigt), Zugriffsschutz erneut gegen die echte Supabase-Instanz geprüft.
+- Zusätzliche Tablet-Verifikation (768px, in der ersten Runde nicht explizit geprüft): kein horizontaler Seiten-Scroll (nur die Canvas selbst scrollt bei Bedarf horizontal, wie in den Edge Cases der Spec für schmale Viewports vorgesehen) — verifiziert, dass Inhalt jenseits der Standardbreite über Scroll erreichbar bleibt, nicht abgeschnitten wird.
+
+### Acceptance Criteria Status (zweite Runde)
+
+Alle 15 Acceptance Criteria erneut manuell im Browser durchgespielt und in der permanenten Regressionssuite (`tests/PROJ-5-dag-sankey-visualisierung.spec.ts`) automatisiert, gegen echte Testdaten (eigener QA5-Testkunde/-projekt, Import + Anreicherung über den echten Upload-Flow angelegt, nicht direkt in die DB geschrieben) — diesmal gegen die neue Rendering-Schicht:
+
+- [x] AC-1 bis AC-15: alle weiterhin PASS, unverändert gegenüber der ersten Runde (siehe „Historische Runde 1" für die Einzelaufstellung) — funktional identisch, nur DOM-Struktur/Selektoren geändert
+- [x] AC-6 weiterhin **PASS mit Abweichung** — siehe **BUG-9**, unverändert, im neuen Rendering identisch reproduziert (Themenblock-Klick klappt nur auf/zu, öffnet nie das Dossier)
+
+### Zusätzlich getestete Fähigkeiten (nicht als formale AC im Spec erfasst)
+
+- [x] **Per-Spalten-Sichtbarkeit:** Jede der drei Ebenen einzeln ein-/ausblendbar über ihren eigenen Spalten-Schalter, unabhängig von den anderen beiden. Letzte verbleibende sichtbare Spalte kann nicht deaktiviert werden (Schalter wird deaktiviert) — verhindert einen komplett leeren Graphen
+- [x] **Globaler Persona-Filter:** Auswahl highlightet alle Verbindungen der gewählten Persona (aktiv/ausgegraut). Bleibt beim Anklicken eines Knotens (Dossier öffnet/schließt) als Dropdown-Auswahl bestehen; das Highlight wechselt währenddessen auf die eigenen Verbindungen des angeklickten Knotens (identisch zum Verhalten ohne Filter) und kehrt beim Schließen des Dossiers wieder zum Persona-Highlight zurück
+- [x] **Ebene-2-Dimensionsgruppierung:** Dimensionen mit mehreren Personas erscheinen standardmäßig als kollabierte Gruppe mit Instanzen-Zähler, aufklappbar; Einzelinstanz-Dimensionen (z. B. „Target Audience", „Umsetzungsrahmen") werden nie gruppiert
+
+### Edge Cases Status (zweite Runde)
+- [x] Viele Ebene-2-Knoten — jetzt vertikales Wachstum der Spalte statt Zoom/Pan (kein React Flow mehr), bei Bedarf horizontales Scrollen der gesamten Canvas (`overflow-x-auto` auf „graph-canvas"); kein hartes Performance-Ziel definiert, bei aktueller Testdatengröße keine Auffälligkeiten
+- [x] Mobile (375px) — weiterhin eigener Testfall, jetzt ohne React Flows Touch-Pan/Zoom (nicht mehr vorhanden), da die statischen Spalten dafür keinen Bedarf mehr haben
+- [x] **Neu getestet: Tablet (768px)** — kein horizontaler Seiten-Scroll (nur „graph-canvas" selbst scrollt bei Bedarf horizontal), Inhalt jenseits der Standardbreite bleibt über Scroll erreichbar, wird nicht abgeschnitten (per `scrollWidth`/`scrollLeft`-Messung verifiziert, nicht nur visuell)
+- [x] Alle übrigen Edge Cases (Umsetzungsrahmen ohne Persona, Persona ohne Instanz, Re-Import zeigt aktuellen Stand, identische Content-Block-Labels) — unverändert gültig, siehe historische Runde
+
+### Security Audit Results (zweite Runde)
+- [x] Authentication: Graph-Unterseite ohne Login → Redirect zu `/login` (erneut verifiziert)
+- [x] Authorization: weiterhin kein neuer Zugriffspfad, keine neue Tabelle/Policy
+- [x] Input-Validierung/XSS: `grep -rn "dangerouslySetInnerHTML"` über `src/components/graph/` und `src/lib/graph/` liefert keinen Treffer — auch nach dem kompletten Rendering-Umbau (React Flow → eigene Divs + SVG) und dem neuen `Select`-basierten Persona-Filter kein unsicherer HTML-Injection-Pfad hinzugekommen
+- [x] Rate Limiting: weiterhin nicht anwendbar (kein neuer Schreibpfad)
+- Keine Sicherheitsfunde
+
+### Bugs Found (zweite Runde)
+Keine neuen Bugs gefunden. BUG-9 (siehe historische Runde) besteht unverändert fort — im neuen Rendering identisch reproduziert (Themenblock-Klick klappt weiterhin nur auf/zu).
+
+### Summary (zweite Runde)
+- **Acceptance Criteria:** 15/15 passed (1 davon weiterhin mit dokumentierter, bewusster Abweichung — BUG-9, unverändert)
+- **Zusätzliche Fähigkeiten:** 3/3 getestete Graph-UI-Batch-Fähigkeiten (Spalten-Sichtbarkeit, Persona-Filter, Dimensionsgruppierung) funktionieren wie vom Nutzer spezifiziert
+- **Bugs Found:** 0 neue (0 critical, 0 high, 0 medium, 0 low) — BUG-9 unverändert offen (Low, Nice-to-have)
+- **Security:** Pass — kein neuer Zugriffspfad, kein neuer Schreibpfad, kein `dangerouslySetInnerHTML`, auch nach dem Rendering-Umbau bestätigt
+- **Regression:** 76/76 Playwright-Tests grün (5 Suiten × 2 Browser, inkl. 2 neuer Tests für den Graph-UI-Batch), 119/119 Vitest-Unit-Tests grün
+- **Production Ready:** YES
+- **Empfehlung:** Deploy. Zusätzlich empfohlen (nicht blockierend): eine `/refine PROJ-5`-Runde, um die drei Graph-UI-Batch-Fähigkeiten (Spalten-Sichtbarkeit, Persona-Filter, Dimensionsgruppierung) nachträglich als formale Acceptance Criteria im Spec zu erfassen — sie wurden direkt vom Nutzer während mehrerer `/frontend`-Runden beauftragt und sind vollständig implementiert/getestet, aber nie durch `/write-spec`/`/refine` formalisiert. BUG-9 weiterhin optional klärbar (siehe historische Runde).
+
+---
+
+## Historische Runde 1 (vor dem Rendering-Umbau, React-Flow-Canvas)
 
 ### Acceptance Criteria Status
 
